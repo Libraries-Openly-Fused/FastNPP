@@ -4,7 +4,7 @@ function(set_default_cuda_target_properties TARGET_NAME)
     endif()
     target_compile_options(${TARGET_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:${COMPILER_CUDA_FLAGS}>)
 
-    set_target_properties(${TARGET_NAME} PROPERTIES CUDA_STANDARD_REQUIRED ON CUDA_STANDARD 17 CUDA_RUNTIME_LIBRARY
+    set_target_properties(${TARGET_NAME} PROPERTIES CUDA_STANDARD_REQUIRED ON CUDA_STANDARD 20 CUDA_RUNTIME_LIBRARY
                                                                                                Shared)
     set_target_cuda_arch_flags(${TARGET_NAME})
     
@@ -16,13 +16,11 @@ function(set_default_cuda_target_properties TARGET_NAME)
     #see https://forums.developer.nvidia.com/t/the-cost-of-relocatable-device-code-rdc-true/47665
     target_compile_options(${TARGET_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-rdc=false>)
     
-    #cuda 12 can compile in parallel, so let's use this 
-    if (${CUDA_VERSION_MAJOR} GREATER_EQUAL 12)
         #split compile does not work with gpu debug code
-        if(NOT ${ENABLE_DEBUG})
-            target_compile_options(${TARGET_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-split-compile=0>)
-        endif()
+    if(NOT ${ENABLE_DEBUG})
+        target_compile_options(${TARGET_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-split-compile=0>)
     endif()
+
     
     if (NOT(${TEMPLATE_DEPTH} STREQUAL  "default"))
     #bugfix for windows compilation of tests with more than 200 recursions

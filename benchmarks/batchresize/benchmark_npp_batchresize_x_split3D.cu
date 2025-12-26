@@ -18,12 +18,12 @@
 #include <nppi_geometry_transforms.h>
 
 #include <fused_kernel/core/data/size.h>
-#include <fused_kernel/algorithms/basic_ops/cuda_vector.cuh>
-#include <fused_kernel/core/utils/parameter_pack_utils.cuh>
+#include <fused_kernel/algorithms/basic_ops/vector_ops.h>
+#include <fused_kernel/core/utils/parameter_pack_utils.h>
 #include <fused_kernel/core/data/rect.h>
-#include <fused_kernel/algorithms/basic_ops/arithmetic.cuh>
-#include <fused_kernel/algorithms/image_processing/resize.cuh>
-#include <fused_kernel/fused_kernel.cuh>
+#include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/image_processing/resize.h>
+#include <fused_kernel/fused_kernel.h>
 
 #include <numeric>
 #include <sstream>
@@ -32,7 +32,7 @@
  
 #include <tests/testsNppCommon.h>
 #include <benchmarks/nppbenchmark.h>
-#include <include/fast_npp.cuh>
+#include <include/fast_npp.h>
 
 constexpr char VARIABLE_DIMENSION[]{"Batch size"};
 constexpr size_t NUM_EXPERIMENTS = 15;
@@ -41,7 +41,7 @@ constexpr size_t INCREMENT = 10;
 constexpr std::array<size_t, NUM_EXPERIMENTS> batchValues = arrayIndexSecuence<FIRST_VALUE, INCREMENT, NUM_EXPERIMENTS>;
 
 template <int BATCH>
-bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cudaStream_t &compute_stream,
+bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, fk::Stream &compute_stream,
                                     bool enabled) {
   std::stringstream error_s;
   bool passed = true;
@@ -88,7 +88,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
               d_dst_output[planeId][batchId] =
                   reinterpret_cast<Npp32f*>(
                     reinterpret_cast<uchar*>(
-                      fk::PtrAccessor<fk::_3D>::point(fk::Point(0,0,batchId), d_tensor.ptr())
+                      fk::PtrAccessor<fk::ND::_3D>::point(fk::Point(0,0,batchId), d_tensor.ptr())
                     ) + plane_padding
                   );
           }
@@ -125,7 +125,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
         hBatchDst[i].oSize = up_size;
 
         const fk::Point current_start_coord(i, i);
-        hBatchSrc[i].pData = reinterpret_cast<void*>(fk::PtrAccessor<fk::_2D>::point(current_start_coord, d_input.ptr()));
+        hBatchSrc[i].pData = reinterpret_cast<void*>(fk::PtrAccessor<fk::ND::_2D>::point(current_start_coord, d_input.ptr()));
         hBatchSrc[i].nStep = d_input.dims().pitch;
         hBatchSrc[i].oSize = crop_size;
 
@@ -160,9 +160,9 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
       gpuErrchk(cudaMemcpyAsync(reinterpret_cast<void **>(dBatchROI), hBatchROI, sizeof(NppiResizeBatchROI_Advanced) * BATCH,
                                 cudaMemcpyHostToDevice, compute_stream));
 
-      std::array<fk::RawPtr<fk::_2D, uchar3>, BATCH> d_crop_fk;
+      std::array<fk::RawPtr<fk::ND::_2D, uchar3>, BATCH> d_crop_fk;
       for (int i = 0; i < BATCH; i++) {
-        d_crop_fk[i] = d_input.crop2D(fk::Point(i, i), fk::PtrDims<fk::_2D>(CROP_W, CROP_H));
+        d_crop_fk[i] = d_input.crop2D(fk::Point(i, i), fk::PtrDims<fk::ND::_2D>(CROP_W, CROP_H));
       }
 
       START_NPP_BENCHMARK
@@ -286,7 +286,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
 
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float value = *fk::PtrAccessor<fk::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
+              const float value = *fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
               std::cout << " " << value;
             }
             std::cout << std::endl;
@@ -294,7 +294,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
           std::cout << std::endl;
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float *const image = fk::PtrAccessor<fk::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
+              const float *const image = fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
               const float pixel = *(image + h_tensor.dims().plane_pitch);
               std::cout << " " << pixel;
             }
@@ -303,7 +303,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
           std::cout << std::endl;
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float *const image = fk::PtrAccessor<fk::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
+              const float *const image = fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
               const float pixel = *(image + (h_tensor.dims().plane_pitch * 2));
               std::cout << " " << pixel;
             }
@@ -316,7 +316,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
 
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float value = *fk::PtrAccessor<fk::_2D>::cr_point(fk::Point(x, y), h_channelA[b].ptr());
+              const float value = *fk::PtrAccessor<fk::ND::_2D>::cr_point(fk::Point(x, y), h_channelA[b].ptr());
               std::cout << " " << value;
             }
             std::cout << std::endl;
@@ -324,7 +324,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
           std::cout << std::endl;
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float value = *fk::PtrAccessor<fk::_2D>::cr_point(fk::Point(x, y), h_channelB[b].ptr());
+              const float value = *fk::PtrAccessor<fk::ND::_2D>::cr_point(fk::Point(x, y), h_channelB[b].ptr());
               std::cout << " " << value;
             }
             std::cout << std::endl;
@@ -332,7 +332,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
           std::cout << std::endl;
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float value = *fk::PtrAccessor<fk::_2D>::cr_point(fk::Point(x, y), h_channelC[b].ptr());
+              const float value = *fk::PtrAccessor<fk::ND::_2D>::cr_point(fk::Point(x, y), h_channelC[b].ptr());
               std::cout << " " << value;
             }
             std::cout << std::endl;
@@ -362,7 +362,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cuda
 
 template <size_t... Is>
 bool launch_test_npp_batchresize_x_split3D(const size_t NUM_ELEMS_X, const size_t NUM_ELEMS_Y,
-                                           std::index_sequence<Is...> seq, cudaStream_t compute_stream, bool enabled) {
+                                           std::index_sequence<Is...> seq, fk::Stream compute_stream, bool enabled) {
   bool passed = true;
   int dummy[] = {
       (passed &= test_npp_batchresize_x_split3D<batchValues[Is]>(NUM_ELEMS_X, NUM_ELEMS_Y, compute_stream, enabled),
@@ -373,7 +373,7 @@ bool launch_test_npp_batchresize_x_split3D(const size_t NUM_ELEMS_X, const size_
 }
 
 template <int BATCH>
-bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, cudaStream_t &compute_stream,
+bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, fk::Stream &compute_stream,
                                     bool enabled) {
   std::stringstream error_s;
   bool passed = true;
@@ -420,7 +420,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
               d_dst_output[planeId][batchId] =
                   reinterpret_cast<Npp32f*>(
                     reinterpret_cast<uchar*>(
-                      fk::PtrAccessor<fk::_3D>::point(fk::Point(0,0,batchId), d_tensor.ptr())
+                      fk::PtrAccessor<fk::ND::_3D>::point(fk::Point(0,0,batchId), d_tensor.ptr())
                     ) + plane_padding
                   );
           }
@@ -457,7 +457,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
         hBatchDst[i].oSize = up_size;
 
         const fk::Point current_start_coord(i, i);
-        hBatchSrc[i].pData = reinterpret_cast<void*>(fk::PtrAccessor<fk::_2D>::point(current_start_coord, d_input.ptr()));
+        hBatchSrc[i].pData = reinterpret_cast<void*>(fk::PtrAccessor<fk::ND::_2D>::point(current_start_coord, d_input.ptr()));
         hBatchSrc[i].nStep = d_input.dims().pitch;
         hBatchSrc[i].oSize = crop_size;
 
@@ -492,9 +492,9 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
       gpuErrchk(cudaMemcpyAsync(reinterpret_cast<void **>(dBatchROI), hBatchROI, sizeof(NppiResizeBatchROI_Advanced) * BATCH,
                                 cudaMemcpyHostToDevice, compute_stream));
 
-      std::array<fk::RawPtr<fk::_2D, uchar3>, BATCH> d_crop_fk;
+      std::array<fk::RawPtr<fk::ND::_2D, uchar3>, BATCH> d_crop_fk;
       for (int i = 0; i < BATCH; i++) {
-        d_crop_fk[i] = d_input.crop2D(fk::Point(i, i), fk::PtrDims<fk::_2D>(CROP_W, CROP_H));
+        d_crop_fk[i] = d_input.crop2D(fk::Point(i, i), fk::PtrDims<fk::ND::_2D>(CROP_W, CROP_H));
       }
 
       // Precompute FastNPP operations for faster execution
@@ -619,7 +619,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
 
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float value = *fk::PtrAccessor<fk::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
+              const float value = *fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
               std::cout << " " << value;
             }
             std::cout << std::endl;
@@ -627,7 +627,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
           std::cout << std::endl;
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float *const image = fk::PtrAccessor<fk::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
+              const float *const image = fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
               const float pixel = *(image + h_tensor.dims().plane_pitch);
               std::cout << " " << pixel;
             }
@@ -636,7 +636,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
           std::cout << std::endl;
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float *const image = fk::PtrAccessor<fk::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
+              const float *const image = fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point(x, y, b), h_tensor.ptr());
               const float pixel = *(image + (h_tensor.dims().plane_pitch * 2));
               std::cout << " " << pixel;
             }
@@ -649,7 +649,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
 
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float value = *fk::PtrAccessor<fk::_2D>::cr_point(fk::Point(x, y), h_channelA[b].ptr());
+              const float value = *fk::PtrAccessor<fk::ND::_2D>::cr_point(fk::Point(x, y), h_channelA[b].ptr());
               std::cout << " " << value;
             }
             std::cout << std::endl;
@@ -657,7 +657,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
           std::cout << std::endl;
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float value = *fk::PtrAccessor<fk::_2D>::cr_point(fk::Point(x, y), h_channelB[b].ptr());
+              const float value = *fk::PtrAccessor<fk::ND::_2D>::cr_point(fk::Point(x, y), h_channelB[b].ptr());
               std::cout << " " << value;
             }
             std::cout << std::endl;
@@ -665,7 +665,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
           std::cout << std::endl;
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
-              const float value = *fk::PtrAccessor<fk::_2D>::cr_point(fk::Point(x, y), h_channelC[b].ptr());
+              const float value = *fk::PtrAccessor<fk::ND::_2D>::cr_point(fk::Point(x, y), h_channelC[b].ptr());
               std::cout << " " << value;
             }
             std::cout << std::endl;
@@ -696,7 +696,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
 // test_npp_batchresize_x_split3D_No_CPU_Overhead
 template <size_t... Is>
 bool launch_test_npp_batchresize_x_split3D_No_CPU_Overhead(const size_t NUM_ELEMS_X, const size_t NUM_ELEMS_Y,
-                                           std::index_sequence<Is...> seq, cudaStream_t compute_stream, bool enabled) {
+                                           std::index_sequence<Is...> seq, fk::Stream compute_stream, bool enabled) {
   bool passed = true;
   int dummy[] = {
       (passed &= test_npp_batchresize_x_split3D_No_CPU_Overhead<batchValues[Is]>(NUM_ELEMS_X, NUM_ELEMS_Y, compute_stream, enabled),
@@ -711,8 +711,7 @@ int launch() {
   constexpr size_t NUM_ELEMS_X = 3840;
   constexpr size_t NUM_ELEMS_Y = 2160;
 
-  cudaStream_t stream;
-  gpuErrchk(cudaStreamCreate(&stream));
+  fk::Stream stream;
 
   std::unordered_map<std::string, bool> results;
   results["test_npp_batchresize_x_split3D"] = true;
@@ -739,6 +738,5 @@ int launch() {
       returnValue = -1;
     }
   }
-  gpuErrchk(cudaStreamDestroy(stream));
   return returnValue;
 }

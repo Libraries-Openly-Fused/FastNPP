@@ -51,5 +51,7 @@ int launch() {
                                         std::declval<decltype(div)>(),
                                         std::declval<decltype(write)>()));
 
+    static_assert(std::is_same_v<ItCompiles, void>);
+
     return 0;
 }

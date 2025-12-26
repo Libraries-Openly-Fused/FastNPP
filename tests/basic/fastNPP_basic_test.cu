@@ -16,7 +16,7 @@
 #include <tests/main.h>
 #endif
 
-#include <fast_npp.cuh>
+#include <fast_npp.h>
 
 int launch() {
     constexpr int nMaxWidth = 1024;

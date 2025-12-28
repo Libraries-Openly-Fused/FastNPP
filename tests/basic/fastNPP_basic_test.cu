@@ -43,7 +43,7 @@ int launch() {
     const auto div = fastNPP::DivC_32f_C3R_Ctx(float3{ 4.f, 0.5f, 3.f });
     const auto write = fastNPP::CopyBatch_32f_C3P3R_Ctx(outputs, 1024*sizeof(float), outputSize);
 
-    using ItCompiles = decltype(fastNPP::executeOperations(std::declval<decltype(streamContext)>(),
+    using ItCompiles = decltype(fastNPP::executeOperations(std::declval<decltype(streamContext)&>(),
                                         std::declval<decltype(resize)>(),
                                         std::declval<decltype(swap)>(),
                                         std::declval<decltype(mul)>(),

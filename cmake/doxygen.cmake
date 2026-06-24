@@ -15,7 +15,7 @@ if(${BUILD_DOCUMENTATION})
     set(DOXYGEN_FILE_PATTERNS "*.cuh;*.h")
     set(DOXYGEN_EXTENSION_MAPPING "cuh=c++;")
     set(DOXYGEN_EXTRACT_ALL YES)
-    set(DOXYGEN_EXCLUDE_PATTERNS "*/tests/* */benchmarks/*")
+    set(DOXYGEN_EXCLUDE_PATTERNS "*/tests/*")
            
     if(MSVC)
         set(DOXYGEN_CPP_CLI_SUPPORT YES)

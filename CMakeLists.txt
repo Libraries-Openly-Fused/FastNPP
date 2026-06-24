@@ -13,7 +13,7 @@ include (cmake/archflags.cmake)
 include (cmake/generators/version_header.cmake)
 include (cmake/libs/fkl.cmake)
 
-project(FastNPP VERSION ${PROJECT_VERSION} LANGUAGES CXX CUDA 
+project(FastNPP VERSION ${PROJECT_VERSION} LANGUAGES CXX 
 DESCRIPTION "A faster implementation of NPP" HOMEPAGE_URL "https://github.com/morousg/FastNPP" )
 
 include (cmake/cuda_init.cmake)

@@ -23,9 +23,31 @@
 #include <fused_kernel/algorithms/image_processing/resize.h>
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/image_processing/morphology.h>
 #include <fused_kernel/core/data/ptr_utils.h>
 
 namespace fastNPP {
+
+    // ===== Morphology: Erode (min) / Dilate (max) over a structuring element =====
+    // The mask, mask size and anchor follow NPP's nppiErode/nppiDilate semantics;
+    // the REPLICATE border matches nppiErodeBorder/nppiDilateBorder with
+    // NPP_BORDER_REPLICATE. Returns a complete read operation; the caller appends
+    // the write. The whole neighbourhood reduction runs as one fused kernel.
+#define FASTNPP_DEFINE_MORPH(NPPNAME, T, MT)                                        \
+    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc, const fk::Ptr2D<uchar>& pMask,    \
+                        int nMaskWidth, int nMaskHeight, int nAnchorX, int nAnchorY) { \
+        return fk::Morphology<fk::ND::_2D, T, MT, fk::MorphBorder::REPLICATE>::build( \
+            pSrc, pMask, nMaskWidth, nMaskHeight, nAnchorX, nAnchorY);              \
+    }
+
+    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C1R_Ctx,   uchar,  fk::MorphologyType::ERODE)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C3R_Ctx,   uchar3, fk::MorphologyType::ERODE)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_16u_C1R_Ctx,  ushort, fk::MorphologyType::ERODE)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_32f_C1R_Ctx,  float,  fk::MorphologyType::ERODE)
+    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C1R_Ctx,  uchar,  fk::MorphologyType::DILATE)
+    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C3R_Ctx,  uchar3, fk::MorphologyType::DILATE)
+    FASTNPP_DEFINE_MORPH(DilateBorder_16u_C1R_Ctx, ushort, fk::MorphologyType::DILATE)
+    FASTNPP_DEFINE_MORPH(DilateBorder_32f_C1R_Ctx, float,  fk::MorphologyType::DILATE)
 
     template <int INTERPOLATION_MODE, int BATCH>
     constexpr inline auto ResizeBatch_8u32f_C3R_Advanced_Ctx(const int& nMaxWidth, const int& nMaxHeight, 

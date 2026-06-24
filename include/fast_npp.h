@@ -23,9 +23,59 @@
 #include <fused_kernel/algorithms/image_processing/resize.h>
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/basic_ops/cast.h>
+#include <fused_kernel/algorithms/image_processing/saturate.h>
 #include <fused_kernel/core/data/ptr_utils.h>
 
 namespace fastNPP {
+
+    // ---- Arithmetic with constant, integer types with scale factor (Sfs) ----
+    // NPP semantics: dst = saturate_cast<T>( round_half_even( (src OP C) * 2^-scaleFactor ) ).
+    // We perform the arithmetic in float (exact for 8u/8s/16u/16s magnitudes),
+    // apply the scale, then saturate-cast back to the integer type. The whole
+    // chain fuses into a single kernel and composes with neighbouring ops.
+    namespace detail {
+        template <typename T, typename VecT, template <typename, typename, typename> class FKLOp>
+        constexpr inline auto buildScaledConstChain(const VecT& c, int nScaleFactor) {
+            using FloatVec = fk::VectorType_t<float, fk::cn<VecT>>;
+            const float scale = 1.0f / static_cast<float>(1 << nScaleFactor);
+            return fk::Cast<VecT, FloatVec>::build()
+                   .then(FKLOp<FloatVec, FloatVec, FloatVec>::build(cxp::cast<FloatVec>::f(c)))
+                   .then(fk::Mul<FloatVec>::build(fk::make_set<FloatVec>(scale)))
+                   .then(fk::SaturateCast<FloatVec, VecT>::build());
+        }
+    } // namespace detail
+
+#define FASTNPP_DEFINE_SCALED_CONST_C1(NPPNAME, DTYPE, FKLOP)                          \
+    constexpr inline auto NPPNAME(const DTYPE& nConstant, int nScaleFactor) {          \
+        return detail::buildScaledConstChain<DTYPE, DTYPE, fk::FKLOP>(nConstant, nScaleFactor); \
+    }
+#define FASTNPP_DEFINE_SCALED_CONST_C3(NPPNAME, DTYPE, VECT, FKLOP)                    \
+    constexpr inline auto NPPNAME(const VECT& aConstants, int nScaleFactor) {          \
+        return detail::buildScaledConstChain<VECT, VECT, fk::FKLOP>(aConstants, nScaleFactor); \
+    }
+
+    // AddC
+    FASTNPP_DEFINE_SCALED_CONST_C1(AddC_8u_C1RSfs_Ctx,  uchar,  Add)
+    FASTNPP_DEFINE_SCALED_CONST_C1(AddC_16u_C1RSfs_Ctx, ushort, Add)
+    FASTNPP_DEFINE_SCALED_CONST_C1(AddC_16s_C1RSfs_Ctx, short,  Add)
+    FASTNPP_DEFINE_SCALED_CONST_C3(AddC_8u_C3RSfs_Ctx,  uchar,  uchar3,  Add)
+    FASTNPP_DEFINE_SCALED_CONST_C3(AddC_16u_C3RSfs_Ctx, ushort, ushort3, Add)
+    FASTNPP_DEFINE_SCALED_CONST_C3(AddC_16s_C3RSfs_Ctx, short,  short3,  Add)
+    // SubC
+    FASTNPP_DEFINE_SCALED_CONST_C1(SubC_8u_C1RSfs_Ctx,  uchar,  Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C1(SubC_16u_C1RSfs_Ctx, ushort, Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C1(SubC_16s_C1RSfs_Ctx, short,  Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C3(SubC_8u_C3RSfs_Ctx,  uchar,  uchar3,  Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C3(SubC_16u_C3RSfs_Ctx, ushort, ushort3, Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C3(SubC_16s_C3RSfs_Ctx, short,  short3,  Sub)
+    // MulC
+    FASTNPP_DEFINE_SCALED_CONST_C1(MulC_8u_C1RSfs_Ctx,  uchar,  Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C1(MulC_16u_C1RSfs_Ctx, ushort, Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C1(MulC_16s_C1RSfs_Ctx, short,  Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C3(MulC_8u_C3RSfs_Ctx,  uchar,  uchar3,  Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C3(MulC_16u_C3RSfs_Ctx, ushort, ushort3, Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C3(MulC_16s_C3RSfs_Ctx, short,  short3,  Mul)
 
     template <int INTERPOLATION_MODE, int BATCH>
     constexpr inline auto ResizeBatch_8u32f_C3R_Advanced_Ctx(const int& nMaxWidth, const int& nMaxHeight, 

@@ -38,7 +38,7 @@ jobs:
           echo "CUDACXX=/usr/local/cuda-${{matrix.cuda_toolkit}}/bin/nvcc" >> "$GITHUB_ENV"
           echo "CC=${{matrix.host_compiler}}" >> "$GITHUB_ENV"
           echo "CXX=${{matrix.host_compiler}}" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=/usr/local/cuda-${{matrix.cuda_toolkit}}:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+        
       - name: Configure CMake
         run: |
           cmake -G "Ninja" -B ${{steps.strings.outputs.build-output-dir}} -DCMAKE_BUILD_TYPE="Release" -S ${{github.workspace}}

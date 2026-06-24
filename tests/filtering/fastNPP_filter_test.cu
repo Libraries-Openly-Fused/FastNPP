@@ -106,6 +106,40 @@ int conv32f() {
     return bad;
 }
 
+int medianTest(int mW, int mH, int aX, int aY) {
+    const int W = 128, H = 96;
+    const size_t N = (size_t)W * H;
+    std::vector<Npp8u> h(N), ref(N), fkl(N);
+    std::mt19937 rng(5); std::uniform_int_distribution<int> di(0, 255);
+    for (size_t i = 0; i < N; ++i) h[i] = (Npp8u)di(rng);
+    fk::Ptr2D<uchar> s(W, H), out(W, H);
+    const int pitch = (int)s.ptr().dims.pitch, rb = W;
+    Npp8u *ds, *dd;
+    cudaMalloc(&ds, (size_t)pitch * H); cudaMalloc(&dd, (size_t)pitch * H);
+    cudaMemcpy2D(ds, pitch, h.data(), rb, rb, H, cudaMemcpyHostToDevice);
+    cudaMemset(dd, 0, (size_t)pitch * H);
+    NppiSize ms{mW, mH}; NppiPoint an{aX, aY}; NppiSize ss{W, H}; NppiPoint so{0, 0};
+    Npp32u bufSz = 0;
+    nppiFilterMedianBorderGetBufferSize_8u_C1R_Ctx({W, H}, ms, &bufSz, NPP_BORDER_REPLICATE, makeCtx());
+    Npp8u* dbuf = nullptr; if (bufSz) cudaMalloc(&dbuf, bufSz);
+    nppiFilterMedianBorder_8u_C1R_Ctx(ds, pitch, ss, so, dd, pitch, {W, H}, ms, an, dbuf, NPP_BORDER_REPLICATE, makeCtx());
+    cudaDeviceSynchronize();
+    cudaMemcpy2D(ref.data(), rb, dd, pitch, rb, H, cudaMemcpyDeviceToHost);
+    cudaMemcpy2D(s.ptr().data, pitch, h.data(), rb, rb, H, cudaMemcpyHostToDevice);
+    fk::Stream st;
+    fk::executeOperations<fk::TransformDPP<>>(st,
+        fastNPP::FilterMedianBorder_8u_C1R_Ctx(s, mW, mH, aX, aY),
+        fk::PerThreadWrite<fk::ND::_2D, uchar>::build(out));
+    st.sync();
+    cudaMemcpy2D(fkl.data(), rb, out.ptr().data, pitch, rb, H, cudaMemcpyDeviceToHost);
+    int bad = 0; for (size_t i = 0; i < N; ++i) if (ref[i] != fkl[i]) ++bad;
+    printf("[%s] FilterMedianBorder_8u_C1R %dx%d a(%d,%d) mismatches=%d/%zu\n",
+           bad ? "FAIL" : "PASS", mW, mH, aX, aY, bad, N);
+    if (dbuf) cudaFree(dbuf);
+    cudaFree(ds); cudaFree(dd);
+    return bad;
+}
+
 } // namespace
 
 int launch() {
@@ -113,6 +147,8 @@ int launch() {
     bad += box8u(3, 3, 1, 1);
     bad += box8u(5, 5, 2, 2);
     bad += conv32f();
+    bad += medianTest(3, 3, 1, 1);
+    bad += medianTest(5, 5, 2, 2);
     printf("%s\n", bad == 0 ? "ALL PASS" : "FAILURES DETECTED");
     return bad == 0 ? 0 : 1;
 }

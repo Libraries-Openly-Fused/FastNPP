@@ -24,6 +24,7 @@
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
 #include <fused_kernel/algorithms/image_processing/linear_filter.h>
+#include <fused_kernel/algorithms/image_processing/median_filter.h>
 #include <fused_kernel/core/data/ptr_utils.h>
 
 namespace fastNPP {
@@ -53,6 +54,20 @@ namespace fastNPP {
     }
     FASTNPP_DEFINE_CONV(FilterBorder_32f_C1R_Ctx, float)
     FASTNPP_DEFINE_CONV(FilterBorder_32f_C3R_Ctx, float3)
+
+    // FilterMedianBorder: per-channel window median. Matches nppiFilterMedianBorder
+    // with NPP_BORDER_REPLICATE. (Note: FKL computes the median directly, so the
+    // NPP scratch-buffer argument is not needed.)
+#define FASTNPP_DEFINE_MEDIAN(NPPNAME, T)                                          \
+    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc, int nMaskWidth, int nMaskHeight, \
+                        int nAnchorX, int nAnchorY) {                              \
+        return fk::MedianFilter<fk::ND::_2D, T, 49, fk::FilterBorder::REPLICATE>::build( \
+            pSrc, nMaskWidth, nMaskHeight, nAnchorX, nAnchorY);                    \
+    }
+    FASTNPP_DEFINE_MEDIAN(FilterMedianBorder_8u_C1R_Ctx,  uchar)
+    FASTNPP_DEFINE_MEDIAN(FilterMedianBorder_8u_C3R_Ctx,  uchar3)
+    FASTNPP_DEFINE_MEDIAN(FilterMedianBorder_16u_C1R_Ctx, ushort)
+    FASTNPP_DEFINE_MEDIAN(FilterMedianBorder_32f_C1R_Ctx, float)
 
     template <int INTERPOLATION_MODE, int BATCH>
     constexpr inline auto ResizeBatch_8u32f_C3R_Advanced_Ctx(const int& nMaxWidth, const int& nMaxHeight, 

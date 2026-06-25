@@ -23,9 +23,49 @@
 #include <fused_kernel/algorithms/image_processing/resize.h>
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/basic_ops/bitwise.h>
+#include <fused_kernel/algorithms/basic_ops/math.h>
+#include <fused_kernel/algorithms/basic_ops/memory_operations.h>
 #include <fused_kernel/core/data/ptr_utils.h>
 
 namespace fastNPP {
+
+    // ===== AbsDiff with constant: |src - C| =====
+    constexpr inline auto AbsDiffC_8u_C1R_Ctx(const uchar& nConstant) {
+        return fk::AbsDiff<uchar>::build(nConstant);
+    }
+    constexpr inline auto AbsDiffC_16u_C1R_Ctx(const ushort& nConstant) {
+        return fk::AbsDiff<ushort>::build(nConstant);
+    }
+    constexpr inline auto AbsDiffC_32f_C1R_Ctx(const float& nConstant) {
+        return fk::AbsDiff<float>::build(nConstant);
+    }
+
+    // ===== Bit shifts by a constant amount =====
+    // NPP takes the shift amount as Npp32u.
+#define FASTNPP_DEFINE_SHIFT(NPPNAME, T, FKLOP)                            \
+    constexpr inline auto NPPNAME(const Npp32u& nConstant) {               \
+        return fk::FKLOP<T, Npp32u>::build(nConstant);                     \
+    }
+    FASTNPP_DEFINE_SHIFT(LShiftC_8u_C1R_Ctx,  uchar,  ShiftLeft)
+    FASTNPP_DEFINE_SHIFT(LShiftC_16u_C1R_Ctx, ushort, ShiftLeft)
+    FASTNPP_DEFINE_SHIFT(LShiftC_32s_C1R_Ctx, int,    ShiftLeft)
+    FASTNPP_DEFINE_SHIFT(RShiftC_8u_C1R_Ctx,  uchar,  ShiftRight)
+    FASTNPP_DEFINE_SHIFT(RShiftC_16u_C1R_Ctx, ushort, ShiftRight)
+    FASTNPP_DEFINE_SHIFT(RShiftC_32s_C1R_Ctx, int,    ShiftRight)
+
+    // ===== Two-image bitwise (And/Or/Xor) =====
+#define FASTNPP_DEFINE_TWO_IMAGE_BW(NPPNAME, T, FKLOP)                          \
+    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc1, const fk::Ptr2D<T>& pSrc2) { \
+        return fk::DualSourceRead<fk::ND::_2D, T>::build(pSrc2, pSrc1)           \
+               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());               \
+    }
+    FASTNPP_DEFINE_TWO_IMAGE_BW(And_8u_C1R_Ctx, uchar,  BwAnd)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(And_8u_C3R_Ctx, uchar3, BwAnd)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(Or_8u_C1R_Ctx,  uchar,  BwOr)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(Or_8u_C3R_Ctx,  uchar3, BwOr)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(Xor_8u_C1R_Ctx, uchar,  BwXor)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(Xor_8u_C3R_Ctx, uchar3, BwXor)
 
     template <int INTERPOLATION_MODE, int BATCH>
     constexpr inline auto ResizeBatch_8u32f_C3R_Advanced_Ctx(const int& nMaxWidth, const int& nMaxHeight, 

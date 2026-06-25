@@ -53,26 +53,76 @@ namespace fastNPP {
         return fk::VectorReorderRT<float3>::build(dstOrderArray);
     }
 
+    // ---- Arithmetic with constant: 32-bit float, C1 / C3 / C4 ----
+    // Each maps the exact NPP entry-point name onto an FKL functor, which is
+    // fully fusable with neighbouring operations in an executeOperations chain.
+
+    // AddC
+    constexpr inline auto AddC_32f_C1R_Ctx(const float& value) {
+        return fk::Add<float>::build(value);
+    }
+    constexpr inline auto AddC_32f_C3R_Ctx(const float3& value) {
+        return fk::Add<float3>::build(value);
+    }
+    constexpr inline auto AddC_32f_C3R_Ctx(const float (&value)[3]) {
+        return fk::Add<float3>::build(fk::make_<float3>(value[0], value[1], value[2]));
+    }
+    constexpr inline auto AddC_32f_C4R_Ctx(const float4& value) {
+        return fk::Add<float4>::build(value);
+    }
+    constexpr inline auto AddC_32f_C4R_Ctx(const float (&value)[4]) {
+        return fk::Add<float4>::build(fk::make_<float4>(value[0], value[1], value[2], value[3]));
+    }
+
+    // MulC
+    constexpr inline auto MulC_32f_C1R_Ctx(const float& value) {
+        return fk::Mul<float>::build(value);
+    }
     constexpr inline auto MulC_32f_C3R_Ctx(const float3& value) {
         return fk::Mul<float3>::build(value);
     }
-
     constexpr inline auto MulC_32f_C3R_Ctx(const float (&value)[3]) {
         return fk::Mul<float3>::build(fk::make_<float3>(value[0], value[1], value[2]));
     }
+    constexpr inline auto MulC_32f_C4R_Ctx(const float4& value) {
+        return fk::Mul<float4>::build(value);
+    }
+    constexpr inline auto MulC_32f_C4R_Ctx(const float (&value)[4]) {
+        return fk::Mul<float4>::build(fk::make_<float4>(value[0], value[1], value[2], value[3]));
+    }
 
+    // SubC
+    constexpr inline auto SubC_32f_C1R_Ctx(const float& value) {
+        return fk::Sub<float>::build(value);
+    }
     constexpr inline auto SubC_32f_C3R_Ctx(const float3& value) {
         return fk::Sub<float3>::build(value);
     }
-
     constexpr inline auto SubC_32f_C3R_Ctx(const float(&value)[3]) {
         return fk::Sub<float3>::build(fk::make_<float3>(value[0], value[1], value[2]));
+    }
+    constexpr inline auto SubC_32f_C4R_Ctx(const float4& value) {
+        return fk::Sub<float4>::build(value);
+    }
+    constexpr inline auto SubC_32f_C4R_Ctx(const float(&value)[4]) {
+        return fk::Sub<float4>::build(fk::make_<float4>(value[0], value[1], value[2], value[3]));
+    }
+
+    // DivC
+    constexpr inline auto DivC_32f_C1R_Ctx(const float& value) {
+        return fk::Div<float>::build(value);
     }
     constexpr inline auto DivC_32f_C3R_Ctx(const float3& value) {
         return fk::Div<float3>::build(value);
     }
     constexpr inline auto DivC_32f_C3R_Ctx(const float(&value)[3]) {
         return fk::Div<float3>::build(fk::make_<float3>(value[0], value[1], value[2]));
+    }
+    constexpr inline auto DivC_32f_C4R_Ctx(const float4& value) {
+        return fk::Div<float4>::build(value);
+    }
+    constexpr inline auto DivC_32f_C4R_Ctx(const float(&value)[4]) {
+        return fk::Div<float4>::build(fk::make_<float4>(value[0], value[1], value[2], value[3]));
     }
     template <size_t BATCH>
     constexpr inline auto CopyBatch_32f_C3P3R_Ctx(const std::array<Npp32f*, BATCH>  (&aDst)[3],

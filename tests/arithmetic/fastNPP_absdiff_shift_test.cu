@@ -103,8 +103,8 @@ int bwTwoImg(const char* label, NppFn nppFn, FKLChainFn chainFn) {
     const size_t N = (size_t)W * H;
     std::vector<Npp8u> h1(N), h2(N), ref(N), fkl(N);
     for (size_t i = 0; i < N; ++i) { h1[i] = (Npp8u)((i * 53) % 256); h2[i] = (Npp8u)((i * 97) % 256); }
-    fk::Ptr2D<uchar> s1(W, H), s2(W, H), d(W, H);
-    const int pitch = (int)s1.ptr().dims.pitch, rb = W;
+    fk::Ptr2D<uchar> d(W, H);
+    const int pitch = (int)d.ptr().dims.pitch, rb = W;
     Npp8u *d1, *d2, *dd;
     cudaMalloc(&d1, (size_t)pitch * H); cudaMalloc(&d2, (size_t)pitch * H); cudaMalloc(&dd, (size_t)pitch * H);
     cudaMemcpy2D(d1, pitch, h1.data(), rb, rb, H, cudaMemcpyHostToDevice);
@@ -112,10 +112,9 @@ int bwTwoImg(const char* label, NppFn nppFn, FKLChainFn chainFn) {
     nppFn(d1, pitch, d2, pitch, dd, pitch, {W, H}, makeCtx());
     cudaDeviceSynchronize();
     cudaMemcpy2D(ref.data(), rb, dd, pitch, rb, H, cudaMemcpyDeviceToHost);
-    cudaMemcpy2D(s1.ptr().data, pitch, h1.data(), rb, rb, H, cudaMemcpyHostToDevice);
-    cudaMemcpy2D(s2.ptr().data, pitch, h2.data(), rb, rb, H, cudaMemcpyHostToDevice);
     fk::Stream st;
-    fk::executeOperations<fk::TransformDPP<>>(st, chainFn(s1, s2),
+    fk::executeOperations<fk::TransformDPP<>>(st,
+        chainFn(d1, pitch, d2, pitch, NppiSize{W, H}),
         fk::PerThreadWrite<fk::ND::_2D, uchar>::build(d));
     st.sync();
     cudaMemcpy2D(fkl.data(), rb, d.ptr().data, pitch, rb, H, cudaMemcpyDeviceToHost);
@@ -133,11 +132,14 @@ int launch() {
     bad += shiftC("LShiftC_8u_C1R", 1, nppiLShiftC_8u_C1R_Ctx, fastNPP::LShiftC_8u_C1R_Ctx(1));
     bad += shiftC("RShiftC_8u_C1R", 2, nppiRShiftC_8u_C1R_Ctx, fastNPP::RShiftC_8u_C1R_Ctx(2));
     bad += bwTwoImg("And_8u_C1R", nppiAnd_8u_C1R_Ctx,
-                    [](const fk::Ptr2D<uchar>& a, const fk::Ptr2D<uchar>& b){ return fastNPP::And_8u_C1R_Ctx(a, b); });
+                    [](const Npp8u* a, Npp32s sa, const Npp8u* b, Npp32s sb, NppiSize sz) {
+                        return fastNPP::And_8u_C1R_Ctx(a, sa, b, sb, sz); });
     bad += bwTwoImg("Or_8u_C1R", nppiOr_8u_C1R_Ctx,
-                    [](const fk::Ptr2D<uchar>& a, const fk::Ptr2D<uchar>& b){ return fastNPP::Or_8u_C1R_Ctx(a, b); });
+                    [](const Npp8u* a, Npp32s sa, const Npp8u* b, Npp32s sb, NppiSize sz) {
+                        return fastNPP::Or_8u_C1R_Ctx(a, sa, b, sb, sz); });
     bad += bwTwoImg("Xor_8u_C1R", nppiXor_8u_C1R_Ctx,
-                    [](const fk::Ptr2D<uchar>& a, const fk::Ptr2D<uchar>& b){ return fastNPP::Xor_8u_C1R_Ctx(a, b); });
+                    [](const Npp8u* a, Npp32s sa, const Npp8u* b, Npp32s sb, NppiSize sz) {
+                        return fastNPP::Xor_8u_C1R_Ctx(a, sa, b, sb, sz); });
     printf("%s\n", bad == 0 ? "ALL PASS" : "FAILURES DETECTED");
     return bad == 0 ? 0 : 1;
 }

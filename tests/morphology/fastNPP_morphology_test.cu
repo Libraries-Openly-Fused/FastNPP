@@ -108,28 +108,68 @@ int launch() {
     int bad = 0;
     bad += verify("ErodeBorder_8u_C1R 3x3", 3, 3, 1, 1,
         nppiErodeBorder_8u_C1R_Ctx,
-        [](const Npp8u* s, Npp32s step, NppiSize sz,
-           Npp8u* d, Npp32s dstep,
+        [](const Npp8u* s, Npp32s sStep, NppiSize sz,
+           Npp8u* d, Npp32s dStep,
            NppiSize mSz, NppiPoint anc, NppStreamContext ctx) {
-            fastNPP::ErodeBorder_8u_C1R_Ctx(s, step, sz, d, dstep, mSz, anc, ctx); });
+            int devID = 0; cudaGetDevice(&devID);
+            fk::Ptr2D<uchar> fkSrc(reinterpret_cast<uchar*>(const_cast<Npp8u*>(s)),
+                static_cast<uint>(sz.width), static_cast<uint>(sz.height),
+                static_cast<uint>(sStep), fk::MemType::Device, devID);
+            fk::Ptr2D<uchar> fkDst(reinterpret_cast<uchar*>(d),
+                static_cast<uint>(sz.width), static_cast<uint>(sz.height),
+                static_cast<uint>(dStep), fk::MemType::Device, devID);
+            fastNPP::ErodeBorder_8u_C1R_Ctx(
+                fk::PerThreadRead<fk::ND::_2D, uchar>::build(fkSrc),
+                fk::PerThreadWrite<fk::ND::_2D, uchar>::build(fkDst),
+                sz, mSz, anc, ctx); });
     bad += verify("DilateBorder_8u_C1R 3x3", 3, 3, 1, 1,
         nppiDilateBorder_8u_C1R_Ctx,
-        [](const Npp8u* s, Npp32s step, NppiSize sz,
-           Npp8u* d, Npp32s dstep,
+        [](const Npp8u* s, Npp32s sStep, NppiSize sz,
+           Npp8u* d, Npp32s dStep,
            NppiSize mSz, NppiPoint anc, NppStreamContext ctx) {
-            fastNPP::DilateBorder_8u_C1R_Ctx(s, step, sz, d, dstep, mSz, anc, ctx); });
+            int devID = 0; cudaGetDevice(&devID);
+            fk::Ptr2D<uchar> fkSrc(reinterpret_cast<uchar*>(const_cast<Npp8u*>(s)),
+                static_cast<uint>(sz.width), static_cast<uint>(sz.height),
+                static_cast<uint>(sStep), fk::MemType::Device, devID);
+            fk::Ptr2D<uchar> fkDst(reinterpret_cast<uchar*>(d),
+                static_cast<uint>(sz.width), static_cast<uint>(sz.height),
+                static_cast<uint>(dStep), fk::MemType::Device, devID);
+            fastNPP::DilateBorder_8u_C1R_Ctx(
+                fk::PerThreadRead<fk::ND::_2D, uchar>::build(fkSrc),
+                fk::PerThreadWrite<fk::ND::_2D, uchar>::build(fkDst),
+                sz, mSz, anc, ctx); });
     bad += verify("ErodeBorder_8u_C1R 5x5", 5, 5, 2, 2,
         nppiErodeBorder_8u_C1R_Ctx,
-        [](const Npp8u* s, Npp32s step, NppiSize sz,
-           Npp8u* d, Npp32s dstep,
+        [](const Npp8u* s, Npp32s sStep, NppiSize sz,
+           Npp8u* d, Npp32s dStep,
            NppiSize mSz, NppiPoint anc, NppStreamContext ctx) {
-            fastNPP::ErodeBorder_8u_C1R_Ctx(s, step, sz, d, dstep, mSz, anc, ctx); });
+            int devID = 0; cudaGetDevice(&devID);
+            fk::Ptr2D<uchar> fkSrc(reinterpret_cast<uchar*>(const_cast<Npp8u*>(s)),
+                static_cast<uint>(sz.width), static_cast<uint>(sz.height),
+                static_cast<uint>(sStep), fk::MemType::Device, devID);
+            fk::Ptr2D<uchar> fkDst(reinterpret_cast<uchar*>(d),
+                static_cast<uint>(sz.width), static_cast<uint>(sz.height),
+                static_cast<uint>(dStep), fk::MemType::Device, devID);
+            fastNPP::ErodeBorder_8u_C1R_Ctx(
+                fk::PerThreadRead<fk::ND::_2D, uchar>::build(fkSrc),
+                fk::PerThreadWrite<fk::ND::_2D, uchar>::build(fkDst),
+                sz, mSz, anc, ctx); });
     bad += verify("DilateBorder_8u_C1R 5x5", 5, 5, 2, 2,
         nppiDilateBorder_8u_C1R_Ctx,
-        [](const Npp8u* s, Npp32s step, NppiSize sz,
-           Npp8u* d, Npp32s dstep,
+        [](const Npp8u* s, Npp32s sStep, NppiSize sz,
+           Npp8u* d, Npp32s dStep,
            NppiSize mSz, NppiPoint anc, NppStreamContext ctx) {
-            fastNPP::DilateBorder_8u_C1R_Ctx(s, step, sz, d, dstep, mSz, anc, ctx); });
+            int devID = 0; cudaGetDevice(&devID);
+            fk::Ptr2D<uchar> fkSrc(reinterpret_cast<uchar*>(const_cast<Npp8u*>(s)),
+                static_cast<uint>(sz.width), static_cast<uint>(sz.height),
+                static_cast<uint>(sStep), fk::MemType::Device, devID);
+            fk::Ptr2D<uchar> fkDst(reinterpret_cast<uchar*>(d),
+                static_cast<uint>(sz.width), static_cast<uint>(sz.height),
+                static_cast<uint>(dStep), fk::MemType::Device, devID);
+            fastNPP::DilateBorder_8u_C1R_Ctx(
+                fk::PerThreadRead<fk::ND::_2D, uchar>::build(fkSrc),
+                fk::PerThreadWrite<fk::ND::_2D, uchar>::build(fkDst),
+                sz, mSz, anc, ctx); });
     printf("%s\n", bad == 0 ? "ALL PASS" : "FAILURES DETECTED");
     return bad == 0 ? 0 : 1;
 }

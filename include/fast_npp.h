@@ -40,49 +40,35 @@ namespace fastNPP {
     // Implements rectangular (all-active) structuring elements over a
     // configurable mask size and anchor. Border semantics match
     // nppiErodeBorder / nppiDilateBorder with NPP_BORDER_REPLICATE when
-    // a full all-ones mask is used. Each function accepts standard NPP
-    // parameters and converts them to fk:: types internally.
-    // Each function executes a self-contained GPU kernel (not composable
-    // via executeOperations).
-#define FASTNPP_DEFINE_MORPH(NPPNAME, T, NPP_T, FKL_EXEC_FN)                        \
-    inline void NPPNAME(const NPP_T* pSrc, Npp32s nSrcStep, NppiSize oSrcSize,      \
-                        NPP_T* pDst, Npp32s nDstStep,                                \
-                        NppiSize oMaskSize, NppiPoint oAnchor,                        \
+    // a full all-ones mask is used.
+    // Because these functions execute a GPU kernel directly they accept a
+    // caller-supplied ReadIOp and WriteIOp instead of hard-coding
+    // PerThreadRead / PerThreadWrite; the remaining parameters are standard
+    // NPP types (NppiSize, NppiPoint, NppStreamContext).
+#define FASTNPP_DEFINE_MORPH(NPPNAME, T, FKL_EXEC_FN)                               \
+    template <typename ReadIOp, typename WriteIOp>                                   \
+    inline void NPPNAME(const ReadIOp& input, const WriteIOp& output,               \
+                        NppiSize oSrcSize, NppiSize oMaskSize, NppiPoint oAnchor,   \
                         NppStreamContext nppStreamCtx) {                              \
-        int deviceID{ 0 };                                                            \
-        gpuErrchk(cudaGetDevice(&deviceID));                                          \
-        fk::Ptr2D<T> fkSrc(reinterpret_cast<T*>(const_cast<NPP_T*>(pSrc)),          \
-                            static_cast<uint>(oSrcSize.width),                        \
-                            static_cast<uint>(oSrcSize.height),                       \
-                            static_cast<uint>(nSrcStep),                              \
-                            fk::MemType::Device, deviceID);                           \
-        fk::Ptr2D<T> fkDst(reinterpret_cast<T*>(pDst),                               \
-                            static_cast<uint>(oSrcSize.width),                        \
-                            static_cast<uint>(oSrcSize.height),                       \
-                            static_cast<uint>(nDstStep),                              \
-                            fk::MemType::Device, deviceID);                           \
-        fk::MorphologyDPPDetails<T> details{};                                        \
-        details.width   = oSrcSize.width;                                             \
-        details.height  = oSrcSize.height;                                            \
-        details.maskW   = oMaskSize.width;                                            \
-        details.maskH   = oMaskSize.height;                                           \
-        details.anchorX = oAnchor.x;                                                  \
-        details.anchorY = oAnchor.y;                                                  \
-        fk::Stream stream(nppStreamCtx.hStream);                                      \
-        fk::FKL_EXEC_FN(details,                                                      \
-            fk::PerThreadRead<fk::ND::_2D, T>::build(fkSrc),                         \
-            fk::PerThreadWrite<fk::ND::_2D, T>::build(fkDst),                        \
-            stream);                                                                   \
+        fk::MorphologyDPPDetails<T> details{};                                       \
+        details.width   = oSrcSize.width;                                            \
+        details.height  = oSrcSize.height;                                           \
+        details.maskW   = oMaskSize.width;                                           \
+        details.maskH   = oMaskSize.height;                                          \
+        details.anchorX = oAnchor.x;                                                 \
+        details.anchorY = oAnchor.y;                                                 \
+        fk::Stream stream(nppStreamCtx.hStream);                                     \
+        fk::FKL_EXEC_FN(details, input, output, stream);                             \
     }
 
-    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C1R_Ctx,   uchar,  Npp8u,  executeErode)
-    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C3R_Ctx,   uchar3, Npp8u,  executeErode)
-    FASTNPP_DEFINE_MORPH(ErodeBorder_16u_C1R_Ctx,  ushort, Npp16u, executeErode)
-    FASTNPP_DEFINE_MORPH(ErodeBorder_32f_C1R_Ctx,  float,  Npp32f, executeErode)
-    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C1R_Ctx,  uchar,  Npp8u,  executeDilate)
-    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C3R_Ctx,  uchar3, Npp8u,  executeDilate)
-    FASTNPP_DEFINE_MORPH(DilateBorder_16u_C1R_Ctx, ushort, Npp16u, executeDilate)
-    FASTNPP_DEFINE_MORPH(DilateBorder_32f_C1R_Ctx, float,  Npp32f, executeDilate)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C1R_Ctx,   uchar,  executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C3R_Ctx,   uchar3, executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_16u_C1R_Ctx,  ushort, executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_32f_C1R_Ctx,  float,  executeErode)
+    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C1R_Ctx,  uchar,  executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C3R_Ctx,  uchar3, executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_16u_C1R_Ctx, ushort, executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_32f_C1R_Ctx, float,  executeDilate)
     // ===== AbsDiff with constant: |src - C| =====
     constexpr inline auto AbsDiffC_8u_C1R_Ctx(const uchar& nConstant) {
         return fk::AbsDiff<uchar>::build(nConstant);
@@ -108,35 +94,63 @@ namespace fastNPP {
     FASTNPP_DEFINE_SHIFT(RShiftC_32s_C1R_Ctx, int,    ShiftRight)
 
     // ===== Two-image bitwise (And/Or/Xor) =====
-#define FASTNPP_DEFINE_TWO_IMAGE_BW(NPPNAME, T, FKLOP)                          \
-    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc1, const fk::Ptr2D<T>& pSrc2) { \
-        return fk::DualSourceRead<fk::ND::_2D, T>::build(pSrc2, pSrc1)           \
-               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());               \
+    // Returns a DualSourceRead IOp (ReadType) that reads two source images and
+    // applies the bitwise operation element-wise. NPP pointer parameters are
+    // converted to fk:: types internally. The returned IOp can be composed in
+    // an executeOperations chain.
+#define FASTNPP_DEFINE_TWO_IMAGE_BW(NPPNAME, T, NPP_T, FKLOP)                          \
+    inline auto NPPNAME(const NPP_T* pSrc1, Npp32s nSrc1Step,                          \
+                        const NPP_T* pSrc2, Npp32s nSrc2Step,                           \
+                        NppiSize oSizeROI) {                                             \
+        int deviceID{ 0 };                                                               \
+        gpuErrchk(cudaGetDevice(&deviceID));                                             \
+        const fk::Ptr2D<T> fkSrc1(                                                      \
+            reinterpret_cast<T*>(const_cast<NPP_T*>(pSrc1)),                            \
+            static_cast<uint>(oSizeROI.width), static_cast<uint>(oSizeROI.height),      \
+            static_cast<uint>(nSrc1Step), fk::MemType::Device, deviceID);               \
+        const fk::Ptr2D<T> fkSrc2(                                                      \
+            reinterpret_cast<T*>(const_cast<NPP_T*>(pSrc2)),                            \
+            static_cast<uint>(oSizeROI.width), static_cast<uint>(oSizeROI.height),      \
+            static_cast<uint>(nSrc2Step), fk::MemType::Device, deviceID);               \
+        return fk::DualSourceRead<fk::ND::_2D, T>::build(fkSrc2, fkSrc1)               \
+               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());                      \
     }
-    FASTNPP_DEFINE_TWO_IMAGE_BW(And_8u_C1R_Ctx, uchar,  BwAnd)
-    FASTNPP_DEFINE_TWO_IMAGE_BW(And_8u_C3R_Ctx, uchar3, BwAnd)
-    FASTNPP_DEFINE_TWO_IMAGE_BW(Or_8u_C1R_Ctx,  uchar,  BwOr)
-    FASTNPP_DEFINE_TWO_IMAGE_BW(Or_8u_C3R_Ctx,  uchar3, BwOr)
-    FASTNPP_DEFINE_TWO_IMAGE_BW(Xor_8u_C1R_Ctx, uchar,  BwXor)
-    FASTNPP_DEFINE_TWO_IMAGE_BW(Xor_8u_C3R_Ctx, uchar3, BwXor)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(And_8u_C1R_Ctx, uchar,  Npp8u, BwAnd)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(And_8u_C3R_Ctx, uchar3, Npp8u, BwAnd)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(Or_8u_C1R_Ctx,  uchar,  Npp8u, BwOr)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(Or_8u_C3R_Ctx,  uchar3, Npp8u, BwOr)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(Xor_8u_C1R_Ctx, uchar,  Npp8u, BwXor)
+    FASTNPP_DEFINE_TWO_IMAGE_BW(Xor_8u_C3R_Ctx, uchar3, Npp8u, BwXor)
     // ===== Two-image element-wise arithmetic (32f) =====
     // NPP computes dst = pSrc2 OP pSrc1; we feed (src2, src1) into DualSourceRead
     // so the fused Unary operator reproduces NPP's operand order exactly.
     // These return a complete read->op chain; the caller appends the write.
-#define FASTNPP_DEFINE_TWO_IMAGE(NPPNAME, T, FKLOP)                              \
-    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc1, const fk::Ptr2D<T>& pSrc2) {  \
-        return fk::DualSourceRead<fk::ND::_2D, T>::build(pSrc2, pSrc1)            \
-               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());                \
+#define FASTNPP_DEFINE_TWO_IMAGE(NPPNAME, T, NPP_T, FKLOP)                             \
+    inline auto NPPNAME(const NPP_T* pSrc1, Npp32s nSrc1Step,                          \
+                        const NPP_T* pSrc2, Npp32s nSrc2Step,                           \
+                        NppiSize oSizeROI) {                                             \
+        int deviceID{ 0 };                                                               \
+        gpuErrchk(cudaGetDevice(&deviceID));                                             \
+        const fk::Ptr2D<T> fkSrc1(                                                      \
+            reinterpret_cast<T*>(const_cast<NPP_T*>(pSrc1)),                            \
+            static_cast<uint>(oSizeROI.width), static_cast<uint>(oSizeROI.height),      \
+            static_cast<uint>(nSrc1Step), fk::MemType::Device, deviceID);               \
+        const fk::Ptr2D<T> fkSrc2(                                                      \
+            reinterpret_cast<T*>(const_cast<NPP_T*>(pSrc2)),                            \
+            static_cast<uint>(oSizeROI.width), static_cast<uint>(oSizeROI.height),      \
+            static_cast<uint>(nSrc2Step), fk::MemType::Device, deviceID);               \
+        return fk::DualSourceRead<fk::ND::_2D, T>::build(fkSrc2, fkSrc1)               \
+               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());                      \
     }
 
-    FASTNPP_DEFINE_TWO_IMAGE(Add_32f_C1R_Ctx,  float,  Add)
-    FASTNPP_DEFINE_TWO_IMAGE(Add_32f_C3R_Ctx,  float3, Add)
-    FASTNPP_DEFINE_TWO_IMAGE(Sub_32f_C1R_Ctx,  float,  Sub)
-    FASTNPP_DEFINE_TWO_IMAGE(Sub_32f_C3R_Ctx,  float3, Sub)
-    FASTNPP_DEFINE_TWO_IMAGE(Mul_32f_C1R_Ctx,  float,  Mul)
-    FASTNPP_DEFINE_TWO_IMAGE(Mul_32f_C3R_Ctx,  float3, Mul)
-    FASTNPP_DEFINE_TWO_IMAGE(Div_32f_C1R_Ctx,  float,  Div)
-    FASTNPP_DEFINE_TWO_IMAGE(Div_32f_C3R_Ctx,  float3, Div)
+    FASTNPP_DEFINE_TWO_IMAGE(Add_32f_C1R_Ctx,  float,  Npp32f, Add)
+    FASTNPP_DEFINE_TWO_IMAGE(Add_32f_C3R_Ctx,  float3, Npp32f, Add)
+    FASTNPP_DEFINE_TWO_IMAGE(Sub_32f_C1R_Ctx,  float,  Npp32f, Sub)
+    FASTNPP_DEFINE_TWO_IMAGE(Sub_32f_C3R_Ctx,  float3, Npp32f, Sub)
+    FASTNPP_DEFINE_TWO_IMAGE(Mul_32f_C1R_Ctx,  float,  Npp32f, Mul)
+    FASTNPP_DEFINE_TWO_IMAGE(Mul_32f_C3R_Ctx,  float3, Npp32f, Mul)
+    FASTNPP_DEFINE_TWO_IMAGE(Div_32f_C1R_Ctx,  float,  Npp32f, Div)
+    FASTNPP_DEFINE_TWO_IMAGE(Div_32f_C3R_Ctx,  float3, Npp32f, Div)
     // ===== Bitwise operations =====
     // AndC / OrC / XorC with a constant, and Not (no constant). Integer types,
     // C1 / C3 / C4. Each maps the exact NPP name onto an FKL bitwise functor.

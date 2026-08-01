@@ -59,18 +59,20 @@ int verify(const char* label, int mW, int mH, int aX, int aY,
     // All-active rectangular mask (matches FKL rectangular morphology)
     std::vector<Npp8u> hmask(mW * mH, 1);
 
-    // --- NPP reference ---
-    fk::Ptr2D<uchar> srcNpp(W, H);
-    const int pitch = (int)srcNpp.ptr().dims.pitch;
+    // Allocate device memory with a pitch aligned by CUDA
     const int rb = W;
+    size_t pitchBytes = 0;
+    Npp8u *dSrc = nullptr, *dNppDst = nullptr, *dFastDst = nullptr, *dmask = nullptr;
+    cudaMallocPitch(reinterpret_cast<void**>(&dSrc),     &pitchBytes, rb, H);
+    cudaMalloc(&dNppDst,  pitchBytes * H);
+    cudaMalloc(&dFastDst, pitchBytes * H);
+    cudaMalloc(&dmask,    (size_t)mW * mH);
 
-    Npp8u *dnppSrc, *dnppDst, *dmask;
-    cudaMalloc(&dnppSrc, (size_t)pitch * H);
-    cudaMalloc(&dnppDst, (size_t)pitch * H);
-    cudaMalloc(&dmask,   (size_t)mW * mH);
-    cudaMemcpy2D(dnppSrc, pitch, h.data(), rb, rb, H, cudaMemcpyHostToDevice);
+    const int pitch = static_cast<int>(pitchBytes);
+    cudaMemcpy2D(dSrc, pitchBytes, h.data(), rb, rb, H, cudaMemcpyHostToDevice);
     cudaMemcpy(dmask, hmask.data(), (size_t)mW * mH, cudaMemcpyHostToDevice);
-    cudaMemset(dnppDst, 0, (size_t)pitch * H);
+    cudaMemset(dNppDst,  0, pitchBytes * H);
+    cudaMemset(dFastDst, 0, pitchBytes * H);
 
     NppiSize srcSize{ W, H };
     NppiPoint srcOffset{ 0, 0 };
@@ -78,28 +80,25 @@ int verify(const char* label, int mW, int mH, int aX, int aY,
     NppiSize maskSize{ mW, mH };
     NppiPoint anchor{ aX, aY };
 
-    nppFn(dnppSrc, pitch, srcSize, srcOffset,
-          dnppDst, pitch, roiSize,
+    // --- NPP reference ---
+    nppFn(dSrc, pitch, srcSize, srcOffset,
+          dNppDst, pitch, roiSize,
           dmask, maskSize, anchor,
           NPP_BORDER_REPLICATE, makeCtx());
     cudaDeviceSynchronize();
-    cudaMemcpy2D(ref.data(), rb, dnppDst, pitch, rb, H, cudaMemcpyDeviceToHost);
+    cudaMemcpy2D(ref.data(), rb, dNppDst, pitchBytes, rb, H, cudaMemcpyDeviceToHost);
 
-    // --- FastNPP ---
-    fk::Ptr2D<uchar> src(W, H), dst(W, H);
-    cudaMemcpy2D(src.ptr().data, pitch, h.data(), rb, rb, H, cudaMemcpyHostToDevice);
-    cudaMemset(dst.ptr().data, 0, (size_t)pitch * H);
-
-    fastNppFn(src, dst, mW, mH, aX, aY, makeCtx());
+    // --- FastNPP (accepts NPP parameters; converts to fk:: internally) ---
+    fastNppFn(dSrc, pitch, srcSize, dFastDst, pitch, maskSize, anchor, makeCtx());
     cudaDeviceSynchronize();
-    cudaMemcpy2D(fkl.data(), rb, dst.ptr().data, pitch, rb, H, cudaMemcpyDeviceToHost);
+    cudaMemcpy2D(fkl.data(), rb, dFastDst, pitchBytes, rb, H, cudaMemcpyDeviceToHost);
 
     int bad = 0;
     for (size_t i = 0; i < N; ++i) if (ref[i] != fkl[i]) ++bad;
     printf("[%s] %-26s mask=%dx%d anchor=(%d,%d) mismatches=%d/%zu\n",
            bad ? "FAIL" : "PASS", label, mW, mH, aX, aY, bad, N);
 
-    cudaFree(dnppSrc); cudaFree(dnppDst); cudaFree(dmask);
+    cudaFree(dSrc); cudaFree(dNppDst); cudaFree(dFastDst); cudaFree(dmask);
     return bad;
 }
 
@@ -109,24 +108,28 @@ int launch() {
     int bad = 0;
     bad += verify("ErodeBorder_8u_C1R 3x3", 3, 3, 1, 1,
         nppiErodeBorder_8u_C1R_Ctx,
-        [](const fk::Ptr2D<uchar>& s, fk::Ptr2D<uchar>& d,
-           int mw, int mh, int ax, int ay, NppStreamContext ctx) {
-            fastNPP::ErodeBorder_8u_C1R_Ctx(s, d, mw, mh, ax, ay, ctx); });
+        [](const Npp8u* s, Npp32s step, NppiSize sz,
+           Npp8u* d, Npp32s dstep,
+           NppiSize mSz, NppiPoint anc, NppStreamContext ctx) {
+            fastNPP::ErodeBorder_8u_C1R_Ctx(s, step, sz, d, dstep, mSz, anc, ctx); });
     bad += verify("DilateBorder_8u_C1R 3x3", 3, 3, 1, 1,
         nppiDilateBorder_8u_C1R_Ctx,
-        [](const fk::Ptr2D<uchar>& s, fk::Ptr2D<uchar>& d,
-           int mw, int mh, int ax, int ay, NppStreamContext ctx) {
-            fastNPP::DilateBorder_8u_C1R_Ctx(s, d, mw, mh, ax, ay, ctx); });
+        [](const Npp8u* s, Npp32s step, NppiSize sz,
+           Npp8u* d, Npp32s dstep,
+           NppiSize mSz, NppiPoint anc, NppStreamContext ctx) {
+            fastNPP::DilateBorder_8u_C1R_Ctx(s, step, sz, d, dstep, mSz, anc, ctx); });
     bad += verify("ErodeBorder_8u_C1R 5x5", 5, 5, 2, 2,
         nppiErodeBorder_8u_C1R_Ctx,
-        [](const fk::Ptr2D<uchar>& s, fk::Ptr2D<uchar>& d,
-           int mw, int mh, int ax, int ay, NppStreamContext ctx) {
-            fastNPP::ErodeBorder_8u_C1R_Ctx(s, d, mw, mh, ax, ay, ctx); });
+        [](const Npp8u* s, Npp32s step, NppiSize sz,
+           Npp8u* d, Npp32s dstep,
+           NppiSize mSz, NppiPoint anc, NppStreamContext ctx) {
+            fastNPP::ErodeBorder_8u_C1R_Ctx(s, step, sz, d, dstep, mSz, anc, ctx); });
     bad += verify("DilateBorder_8u_C1R 5x5", 5, 5, 2, 2,
         nppiDilateBorder_8u_C1R_Ctx,
-        [](const fk::Ptr2D<uchar>& s, fk::Ptr2D<uchar>& d,
-           int mw, int mh, int ax, int ay, NppStreamContext ctx) {
-            fastNPP::DilateBorder_8u_C1R_Ctx(s, d, mw, mh, ax, ay, ctx); });
+        [](const Npp8u* s, Npp32s step, NppiSize sz,
+           Npp8u* d, Npp32s dstep,
+           NppiSize mSz, NppiPoint anc, NppStreamContext ctx) {
+            fastNPP::DilateBorder_8u_C1R_Ctx(s, step, sz, d, dstep, mSz, anc, ctx); });
     printf("%s\n", bad == 0 ? "ALL PASS" : "FAILURES DETECTED");
     return bad == 0 ? 0 : 1;
 }

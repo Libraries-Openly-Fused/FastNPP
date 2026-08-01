@@ -112,9 +112,16 @@ int bwTwoImg(const char* label, NppFn nppFn, FKLChainFn chainFn) {
     nppFn(d1, pitch, d2, pitch, dd, pitch, {W, H}, makeCtx());
     cudaDeviceSynchronize();
     cudaMemcpy2D(ref.data(), rb, dd, pitch, rb, H, cudaMemcpyDeviceToHost);
+
+    int devID = 0;
+    cudaGetDevice(&devID);
+    fk::Ptr2D<uchar> f1(d1, (uint)W, (uint)H, (uint)pitch, fk::MemType::Device, devID);
+    fk::Ptr2D<uchar> f2(d2, (uint)W, (uint)H, (uint)pitch, fk::MemType::Device, devID);
+
     fk::Stream st;
     fk::executeOperations<fk::TransformDPP<>>(st,
-        chainFn(d1, pitch, d2, pitch, NppiSize{W, H}),
+        chainFn(fk::PerThreadRead<fk::ND::_2D, uchar>::build(f1),
+                fk::PerThreadRead<fk::ND::_2D, uchar>::build(f2)),
         fk::PerThreadWrite<fk::ND::_2D, uchar>::build(d));
     st.sync();
     cudaMemcpy2D(fkl.data(), rb, d.ptr().data, pitch, rb, H, cudaMemcpyDeviceToHost);
@@ -132,14 +139,11 @@ int launch() {
     bad += shiftC("LShiftC_8u_C1R", 1, nppiLShiftC_8u_C1R_Ctx, fastNPP::LShiftC_8u_C1R_Ctx(1));
     bad += shiftC("RShiftC_8u_C1R", 2, nppiRShiftC_8u_C1R_Ctx, fastNPP::RShiftC_8u_C1R_Ctx(2));
     bad += bwTwoImg("And_8u_C1R", nppiAnd_8u_C1R_Ctx,
-                    [](const Npp8u* a, Npp32s sa, const Npp8u* b, Npp32s sb, NppiSize sz) {
-                        return fastNPP::And_8u_C1R_Ctx(a, sa, b, sb, sz); });
+                    [](const auto& a, const auto& b) { return fastNPP::And_8u_C1R_Ctx(a, b); });
     bad += bwTwoImg("Or_8u_C1R", nppiOr_8u_C1R_Ctx,
-                    [](const Npp8u* a, Npp32s sa, const Npp8u* b, Npp32s sb, NppiSize sz) {
-                        return fastNPP::Or_8u_C1R_Ctx(a, sa, b, sb, sz); });
+                    [](const auto& a, const auto& b) { return fastNPP::Or_8u_C1R_Ctx(a, b); });
     bad += bwTwoImg("Xor_8u_C1R", nppiXor_8u_C1R_Ctx,
-                    [](const Npp8u* a, Npp32s sa, const Npp8u* b, Npp32s sb, NppiSize sz) {
-                        return fastNPP::Xor_8u_C1R_Ctx(a, sa, b, sb, sz); });
+                    [](const auto& a, const auto& b) { return fastNPP::Xor_8u_C1R_Ctx(a, b); });
     printf("%s\n", bad == 0 ? "ALL PASS" : "FAILURES DETECTED");
     return bad == 0 ? 0 : 1;
 }

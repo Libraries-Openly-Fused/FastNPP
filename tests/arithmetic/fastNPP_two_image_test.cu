@@ -64,9 +64,15 @@ int twoImgC1(const char* label, NppFn nppFn, FKLChainFn chainFn, bool avoidZero)
     cudaDeviceSynchronize();
     cudaMemcpy2D(ref.data(), rb, dd, pitch, rb, H, cudaMemcpyDeviceToHost);
 
+    int devID = 0;
+    cudaGetDevice(&devID);
+    fk::Ptr2D<float> f1(d1, (uint)W, (uint)H, (uint)pitch, fk::MemType::Device, devID);
+    fk::Ptr2D<float> f2(d2, (uint)W, (uint)H, (uint)pitch, fk::MemType::Device, devID);
+
     fk::Stream st;
     fk::executeOperations<fk::TransformDPP<>>(st,
-        chainFn(d1, pitch, d2, pitch, NppiSize{W, H}),
+        chainFn(fk::PerThreadRead<fk::ND::_2D, float>::build(f1),
+                fk::PerThreadRead<fk::ND::_2D, float>::build(f2)),
         fk::PerThreadWrite<fk::ND::_2D, float>::build(d));
     st.sync();
     cudaMemcpy2D(fkl.data(), rb, d.ptr().data, pitch, rb, H, cudaMemcpyDeviceToHost);
@@ -87,17 +93,13 @@ int twoImgC1(const char* label, NppFn nppFn, FKLChainFn chainFn, bool avoidZero)
 int launch() {
     int bad = 0;
     bad += twoImgC1("Add_32f_C1R", nppiAdd_32f_C1R_Ctx,
-                    [](const Npp32f* a, Npp32s sa, const Npp32f* b, Npp32s sb, NppiSize sz) {
-                        return fastNPP::Add_32f_C1R_Ctx(a, sa, b, sb, sz); }, false);
+                    [](const auto& a, const auto& b) { return fastNPP::Add_32f_C1R_Ctx(a, b); }, false);
     bad += twoImgC1("Sub_32f_C1R", nppiSub_32f_C1R_Ctx,
-                    [](const Npp32f* a, Npp32s sa, const Npp32f* b, Npp32s sb, NppiSize sz) {
-                        return fastNPP::Sub_32f_C1R_Ctx(a, sa, b, sb, sz); }, false);
+                    [](const auto& a, const auto& b) { return fastNPP::Sub_32f_C1R_Ctx(a, b); }, false);
     bad += twoImgC1("Mul_32f_C1R", nppiMul_32f_C1R_Ctx,
-                    [](const Npp32f* a, Npp32s sa, const Npp32f* b, Npp32s sb, NppiSize sz) {
-                        return fastNPP::Mul_32f_C1R_Ctx(a, sa, b, sb, sz); }, false);
+                    [](const auto& a, const auto& b) { return fastNPP::Mul_32f_C1R_Ctx(a, b); }, false);
     bad += twoImgC1("Div_32f_C1R", nppiDiv_32f_C1R_Ctx,
-                    [](const Npp32f* a, Npp32s sa, const Npp32f* b, Npp32s sb, NppiSize sz) {
-                        return fastNPP::Div_32f_C1R_Ctx(a, sa, b, sb, sz); }, true);
+                    [](const auto& a, const auto& b) { return fastNPP::Div_32f_C1R_Ctx(a, b); }, true);
     printf("%s\n", bad == 0 ? "ALL PASS" : "FAILURES DETECTED");
     return bad == 0 ? 0 : 1;
 }

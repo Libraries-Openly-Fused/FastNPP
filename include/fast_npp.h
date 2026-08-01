@@ -23,6 +23,7 @@
 #include <fused_kernel/algorithms/image_processing/resize.h>
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/image_processing/morphology.h>
 #include <fused_kernel/algorithms/basic_ops/bitwise.h>
 #include <fused_kernel/algorithms/basic_ops/math.h>
 #include <fused_kernel/algorithms/basic_ops/memory_operations.h>
@@ -35,6 +36,39 @@
 
 namespace fastNPP {
 
+    // ===== Morphology: Erode (min) / Dilate (max) with REPLICATE border =====
+    // Implements rectangular (all-active) structuring elements over a
+    // configurable mask size and anchor. Border semantics match
+    // nppiErodeBorder / nppiDilateBorder with NPP_BORDER_REPLICATE when
+    // a full all-ones mask is used. Each function executes a self-contained
+    // GPU kernel (not composable via executeOperations).
+#define FASTNPP_DEFINE_MORPH(NPPNAME, T, FKL_EXEC_FN)                          \
+    inline void NPPNAME(const fk::Ptr2D<T>& pSrc, fk::Ptr2D<T>& pDst,         \
+                        int nMaskWidth, int nMaskHeight,                         \
+                        int nAnchorX, int nAnchorY,                             \
+                        NppStreamContext nppStreamCtx) {                         \
+        fk::MorphologyDPPDetails<T> details{};                                  \
+        details.width   = static_cast<int>(pSrc.ptr().dims.width);              \
+        details.height  = static_cast<int>(pSrc.ptr().dims.height);             \
+        details.maskW   = nMaskWidth;                                            \
+        details.maskH   = nMaskHeight;                                           \
+        details.anchorX = nAnchorX;                                              \
+        details.anchorY = nAnchorY;                                              \
+        fk::Stream stream(nppStreamCtx.hStream);                                \
+        fk::FKL_EXEC_FN(details,                                                \
+            fk::PerThreadRead<fk::ND::_2D, T>::build(pSrc),                    \
+            fk::PerThreadWrite<fk::ND::_2D, T>::build(pDst),                   \
+            stream);                                                             \
+    }
+
+    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C1R_Ctx,   uchar,  executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C3R_Ctx,   uchar3, executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_16u_C1R_Ctx,  ushort, executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_32f_C1R_Ctx,  float,  executeErode)
+    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C1R_Ctx,  uchar,  executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C3R_Ctx,  uchar3, executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_16u_C1R_Ctx, ushort, executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_32f_C1R_Ctx, float,  executeDilate)
     // ===== AbsDiff with constant: |src - C| =====
     constexpr inline auto AbsDiffC_8u_C1R_Ctx(const uchar& nConstant) {
         return fk::AbsDiff<uchar>::build(nConstant);

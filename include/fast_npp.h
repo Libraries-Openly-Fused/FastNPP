@@ -23,6 +23,7 @@
 #include <fused_kernel/algorithms/image_processing/resize.h>
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/basic_ops/memory_operations.h>
 #include <fused_kernel/algorithms/basic_ops/bitwise.h>
 #include <fused_kernel/algorithms/basic_ops/math.h>
 #include <fused_kernel/algorithms/basic_ops/cast.h>
@@ -31,6 +32,24 @@
 
 namespace fastNPP {
 
+    // ===== Two-image element-wise arithmetic (32f) =====
+    // NPP computes dst = pSrc2 OP pSrc1; we feed (src2, src1) into DualSourceRead
+    // so the fused Unary operator reproduces NPP's operand order exactly.
+    // These return a complete read->op chain; the caller appends the write.
+#define FASTNPP_DEFINE_TWO_IMAGE(NPPNAME, T, FKLOP)                              \
+    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc1, const fk::Ptr2D<T>& pSrc2) {  \
+        return fk::DualSourceRead<fk::ND::_2D, T>::build(pSrc2, pSrc1)            \
+               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());                \
+    }
+
+    FASTNPP_DEFINE_TWO_IMAGE(Add_32f_C1R_Ctx,  float,  Add)
+    FASTNPP_DEFINE_TWO_IMAGE(Add_32f_C3R_Ctx,  float3, Add)
+    FASTNPP_DEFINE_TWO_IMAGE(Sub_32f_C1R_Ctx,  float,  Sub)
+    FASTNPP_DEFINE_TWO_IMAGE(Sub_32f_C3R_Ctx,  float3, Sub)
+    FASTNPP_DEFINE_TWO_IMAGE(Mul_32f_C1R_Ctx,  float,  Mul)
+    FASTNPP_DEFINE_TWO_IMAGE(Mul_32f_C3R_Ctx,  float3, Mul)
+    FASTNPP_DEFINE_TWO_IMAGE(Div_32f_C1R_Ctx,  float,  Div)
+    FASTNPP_DEFINE_TWO_IMAGE(Div_32f_C3R_Ctx,  float3, Div)
     // ===== Bitwise operations =====
     // AndC / OrC / XorC with a constant, and Not (no constant). Integer types,
     // C1 / C3 / C4. Each maps the exact NPP name onto an FKL bitwise functor.

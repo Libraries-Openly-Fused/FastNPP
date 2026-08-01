@@ -25,6 +25,8 @@
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
 #include <fused_kernel/algorithms/basic_ops/bitwise.h>
 #include <fused_kernel/algorithms/basic_ops/math.h>
+#include <fused_kernel/algorithms/basic_ops/cast.h>
+#include <fused_kernel/algorithms/image_processing/saturate.h>
 #include <fused_kernel/core/data/ptr_utils.h>
 
 namespace fastNPP {
@@ -87,6 +89,53 @@ namespace fastNPP {
     FASTNPP_DEFINE_MATH(Ln_32f_C3R_Ctx,   float3, Ln)
     FASTNPP_DEFINE_MATH(Exp_32f_C1R_Ctx,  float,  Exp)
     FASTNPP_DEFINE_MATH(Exp_32f_C3R_Ctx,  float3, Exp)
+    // ---- Arithmetic with constant, integer types with scale factor (Sfs) ----
+    // NPP semantics: dst = saturate_cast<T>( round_half_even( (src OP C) * 2^-scaleFactor ) ).
+    // We perform the arithmetic in float (exact for 8u/8s/16u/16s magnitudes),
+    // apply the scale, then saturate-cast back to the integer type. The whole
+    // chain fuses into a single kernel and composes with neighbouring ops.
+    namespace detail {
+        template <typename T, typename VecT, template <typename, typename, typename> class FKLOp>
+        constexpr inline auto buildScaledConstChain(const VecT& c, int nScaleFactor) {
+            using FloatVec = fk::VectorType_t<float, fk::cn<VecT>>;
+            const float scale = 1.0f / static_cast<float>(1 << nScaleFactor);
+            return fk::Cast<VecT, FloatVec>::build()
+                   .then(FKLOp<FloatVec, FloatVec, FloatVec>::build(cxp::cast<FloatVec>::f(c)))
+                   .then(fk::Mul<FloatVec>::build(fk::make_set<FloatVec>(scale)))
+                   .then(fk::SaturateCast<FloatVec, VecT>::build());
+        }
+    } // namespace detail
+
+#define FASTNPP_DEFINE_SCALED_CONST_C1(NPPNAME, DTYPE, FKLOP)                          \
+    constexpr inline auto NPPNAME(const DTYPE& nConstant, int nScaleFactor) {          \
+        return detail::buildScaledConstChain<DTYPE, DTYPE, fk::FKLOP>(nConstant, nScaleFactor); \
+    }
+#define FASTNPP_DEFINE_SCALED_CONST_C3(NPPNAME, DTYPE, VECT, FKLOP)                    \
+    constexpr inline auto NPPNAME(const VECT& aConstants, int nScaleFactor) {          \
+        return detail::buildScaledConstChain<VECT, VECT, fk::FKLOP>(aConstants, nScaleFactor); \
+    }
+
+    // AddC
+    FASTNPP_DEFINE_SCALED_CONST_C1(AddC_8u_C1RSfs_Ctx,  uchar,  Add)
+    FASTNPP_DEFINE_SCALED_CONST_C1(AddC_16u_C1RSfs_Ctx, ushort, Add)
+    FASTNPP_DEFINE_SCALED_CONST_C1(AddC_16s_C1RSfs_Ctx, short,  Add)
+    FASTNPP_DEFINE_SCALED_CONST_C3(AddC_8u_C3RSfs_Ctx,  uchar,  uchar3,  Add)
+    FASTNPP_DEFINE_SCALED_CONST_C3(AddC_16u_C3RSfs_Ctx, ushort, ushort3, Add)
+    FASTNPP_DEFINE_SCALED_CONST_C3(AddC_16s_C3RSfs_Ctx, short,  short3,  Add)
+    // SubC
+    FASTNPP_DEFINE_SCALED_CONST_C1(SubC_8u_C1RSfs_Ctx,  uchar,  Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C1(SubC_16u_C1RSfs_Ctx, ushort, Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C1(SubC_16s_C1RSfs_Ctx, short,  Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C3(SubC_8u_C3RSfs_Ctx,  uchar,  uchar3,  Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C3(SubC_16u_C3RSfs_Ctx, ushort, ushort3, Sub)
+    FASTNPP_DEFINE_SCALED_CONST_C3(SubC_16s_C3RSfs_Ctx, short,  short3,  Sub)
+    // MulC
+    FASTNPP_DEFINE_SCALED_CONST_C1(MulC_8u_C1RSfs_Ctx,  uchar,  Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C1(MulC_16u_C1RSfs_Ctx, ushort, Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C1(MulC_16s_C1RSfs_Ctx, short,  Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C3(MulC_8u_C3RSfs_Ctx,  uchar,  uchar3,  Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C3(MulC_16u_C3RSfs_Ctx, ushort, ushort3, Mul)
+    FASTNPP_DEFINE_SCALED_CONST_C3(MulC_16s_C3RSfs_Ctx, short,  short3,  Mul)
 
     template <int INTERPOLATION_MODE, int BATCH>
     constexpr inline auto ResizeBatch_8u32f_C3R_Advanced_Ctx(const int& nMaxWidth, const int& nMaxHeight, 
@@ -114,26 +163,76 @@ namespace fastNPP {
         return fk::VectorReorderRT<float3>::build(dstOrderArray);
     }
 
+    // ---- Arithmetic with constant: 32-bit float, C1 / C3 / C4 ----
+    // Each maps the exact NPP entry-point name onto an FKL functor, which is
+    // fully fusable with neighbouring operations in an executeOperations chain.
+
+    // AddC
+    constexpr inline auto AddC_32f_C1R_Ctx(const float& value) {
+        return fk::Add<float>::build(value);
+    }
+    constexpr inline auto AddC_32f_C3R_Ctx(const float3& value) {
+        return fk::Add<float3>::build(value);
+    }
+    constexpr inline auto AddC_32f_C3R_Ctx(const float (&value)[3]) {
+        return fk::Add<float3>::build(fk::make_<float3>(value[0], value[1], value[2]));
+    }
+    constexpr inline auto AddC_32f_C4R_Ctx(const float4& value) {
+        return fk::Add<float4>::build(value);
+    }
+    constexpr inline auto AddC_32f_C4R_Ctx(const float (&value)[4]) {
+        return fk::Add<float4>::build(fk::make_<float4>(value[0], value[1], value[2], value[3]));
+    }
+
+    // MulC
+    constexpr inline auto MulC_32f_C1R_Ctx(const float& value) {
+        return fk::Mul<float>::build(value);
+    }
     constexpr inline auto MulC_32f_C3R_Ctx(const float3& value) {
         return fk::Mul<float3>::build(value);
     }
-
     constexpr inline auto MulC_32f_C3R_Ctx(const float (&value)[3]) {
         return fk::Mul<float3>::build(fk::make_<float3>(value[0], value[1], value[2]));
     }
+    constexpr inline auto MulC_32f_C4R_Ctx(const float4& value) {
+        return fk::Mul<float4>::build(value);
+    }
+    constexpr inline auto MulC_32f_C4R_Ctx(const float (&value)[4]) {
+        return fk::Mul<float4>::build(fk::make_<float4>(value[0], value[1], value[2], value[3]));
+    }
 
+    // SubC
+    constexpr inline auto SubC_32f_C1R_Ctx(const float& value) {
+        return fk::Sub<float>::build(value);
+    }
     constexpr inline auto SubC_32f_C3R_Ctx(const float3& value) {
         return fk::Sub<float3>::build(value);
     }
-
     constexpr inline auto SubC_32f_C3R_Ctx(const float(&value)[3]) {
         return fk::Sub<float3>::build(fk::make_<float3>(value[0], value[1], value[2]));
+    }
+    constexpr inline auto SubC_32f_C4R_Ctx(const float4& value) {
+        return fk::Sub<float4>::build(value);
+    }
+    constexpr inline auto SubC_32f_C4R_Ctx(const float(&value)[4]) {
+        return fk::Sub<float4>::build(fk::make_<float4>(value[0], value[1], value[2], value[3]));
+    }
+
+    // DivC
+    constexpr inline auto DivC_32f_C1R_Ctx(const float& value) {
+        return fk::Div<float>::build(value);
     }
     constexpr inline auto DivC_32f_C3R_Ctx(const float3& value) {
         return fk::Div<float3>::build(value);
     }
     constexpr inline auto DivC_32f_C3R_Ctx(const float(&value)[3]) {
         return fk::Div<float3>::build(fk::make_<float3>(value[0], value[1], value[2]));
+    }
+    constexpr inline auto DivC_32f_C4R_Ctx(const float4& value) {
+        return fk::Div<float4>::build(value);
+    }
+    constexpr inline auto DivC_32f_C4R_Ctx(const float(&value)[4]) {
+        return fk::Div<float4>::build(fk::make_<float4>(value[0], value[1], value[2], value[3]));
     }
     template <size_t BATCH>
     constexpr inline auto CopyBatch_32f_C3P3R_Ctx(const std::array<Npp32f*, BATCH>  (&aDst)[3],

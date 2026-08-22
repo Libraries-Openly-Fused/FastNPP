@@ -42,7 +42,7 @@ function (discover_tests DIR)
          
         string(FIND ${cuda_source} "npp" is_npp)    	
                 
-        target_link_libraries(${cuda_target} PRIVATE CUDA::nppc CUDA::nppial CUDA::nppidei CUDA::nppig) 								              
+        target_link_libraries(${cuda_target} PRIVATE CUDA::nppc CUDA::nppial CUDA::nppidei CUDA::nppig CUDA::nppim CUDA::nppif) 	             
         
     endforeach()
 endfunction()

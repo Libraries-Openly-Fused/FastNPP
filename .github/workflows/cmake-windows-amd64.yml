@@ -17,11 +17,8 @@ jobs:
         include:
           - host_compiler: "cl"
             msvc_env_version: "14.51"
-            cuda_version: "13.3"            
-         
-          - host_compiler: "clang-cl"
-            msvc_env_version: "14.51"
-            cuda_version: "13.3"            
+            cuda_version: "13.4"            
+            
 
     steps:
       - uses: actions/checkout@v6
@@ -31,8 +28,7 @@ jobs:
         # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
         id: strings
         run: |
-          echo "build-output-dir=${{github.workspace}}/build" >> "$env:GITHUB_OUTPUT"          
-          echo "D:/clang+llvm-21.1.0-x86_64-pc-windows-msvc/bin/" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append   
+          echo "build-output-dir=${{github.workspace}}/build" >> "$env:GITHUB_OUTPUT"                    
           echo "CUDACXX=${env:ProgramFiles}\NVIDIA GPU Computing Toolkit\CUDA\v${{matrix.cuda_version}}\bin\nvcc.exe" >> "$env:GITHUB_ENV"
           echo "CC=${{matrix.host_compiler}}" >> "$env:GITHUB_ENV"
           echo "CXX=${{matrix.host_compiler}}" >> "$env:GITHUB_ENV"

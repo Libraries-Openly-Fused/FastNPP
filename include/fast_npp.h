@@ -23,6 +23,7 @@
 #include <fused_kernel/algorithms/image_processing/resize.h>
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/image_processing/morphology.h>
 #include <fused_kernel/algorithms/basic_ops/bitwise.h>
 #include <fused_kernel/algorithms/basic_ops/math.h>
 #include <fused_kernel/algorithms/basic_ops/memory_operations.h>
@@ -35,6 +36,39 @@
 
 namespace fastNPP {
 
+    // ===== Morphology: Erode (min) / Dilate (max) with REPLICATE border =====
+    // Implements rectangular (all-active) structuring elements over a
+    // configurable mask size and anchor. Border semantics match
+    // nppiErodeBorder / nppiDilateBorder with NPP_BORDER_REPLICATE when
+    // a full all-ones mask is used.
+    // Because these functions execute a GPU kernel directly they accept a
+    // caller-supplied ReadIOp and WriteIOp instead of hard-coding
+    // PerThreadRead / PerThreadWrite; the remaining parameters are standard
+    // NPP types (NppiSize, NppiPoint, NppStreamContext).
+#define FASTNPP_DEFINE_MORPH(NPPNAME, T, FKL_EXEC_FN)                               \
+    template <typename ReadIOp, typename WriteIOp>                                   \
+    inline void NPPNAME(const ReadIOp& input, const WriteIOp& output,               \
+                        NppiSize oSrcSize, NppiSize oMaskSize, NppiPoint oAnchor,   \
+                        NppStreamContext nppStreamCtx) {                              \
+        fk::MorphologyDPPDetails<T> details{};                                       \
+        details.width   = oSrcSize.width;                                            \
+        details.height  = oSrcSize.height;                                           \
+        details.maskW   = oMaskSize.width;                                           \
+        details.maskH   = oMaskSize.height;                                          \
+        details.anchorX = oAnchor.x;                                                 \
+        details.anchorY = oAnchor.y;                                                 \
+        fk::Stream stream(nppStreamCtx.hStream);                                     \
+        fk::FKL_EXEC_FN(details, input, output, stream);                             \
+    }
+
+    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C1R_Ctx,   uchar,  executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_8u_C3R_Ctx,   uchar3, executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_16u_C1R_Ctx,  ushort, executeErode)
+    FASTNPP_DEFINE_MORPH(ErodeBorder_32f_C1R_Ctx,  float,  executeErode)
+    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C1R_Ctx,  uchar,  executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_8u_C3R_Ctx,  uchar3, executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_16u_C1R_Ctx, ushort, executeDilate)
+    FASTNPP_DEFINE_MORPH(DilateBorder_32f_C1R_Ctx, float,  executeDilate)
     // ===== AbsDiff with constant: |src - C| =====
     constexpr inline auto AbsDiffC_8u_C1R_Ctx(const uchar& nConstant) {
         return fk::AbsDiff<uchar>::build(nConstant);
@@ -59,11 +93,65 @@ namespace fastNPP {
     FASTNPP_DEFINE_SHIFT(RShiftC_16u_C1R_Ctx, ushort, ShiftRight)
     FASTNPP_DEFINE_SHIFT(RShiftC_32s_C1R_Ctx, int,    ShiftRight)
 
+    // ===== Dual-source Read composition for two-image operations =====
+    // Reads from two caller-supplied Read IOps at the same thread coordinates
+    // and returns their results as fk::Tuple<O1, O2>. This lets two-image
+    // fastNPP entry points take Read IOps (instead of raw NPP pointers) for
+    // both sources while still feeding a Tuple to the two-input Unary compute
+    // Operation that follows (e.g. Add<T,T,T,UnaryType>).
+    namespace detail {
+        template <typename BackIOp_>
+        struct DualSourceReadBack {
+            static_assert(fk::isTuple_v<BackIOp_> && BackIOp_::size == 2,
+                          "DualSourceReadBack expects an fk::Tuple with exactly two Read IOps");
+        private:
+            using Point = fk::Point;
+            using IOp1 = fk::get_t<0, BackIOp_>;
+            using IOp2 = fk::get_t<1, BackIOp_>;
+            static_assert(fk::isAnyCompleteReadType<IOp1> && fk::isAnyCompleteReadType<IOp2>,
+                          "Both elements of the BackIOp Tuple must be complete Read IOps");
+            using SelfType = DualSourceReadBack<BackIOp_>;
+        public:
+            FK_STATIC_STRUCT(DualSourceReadBack, SelfType)
+            using Parent = fk::ReadBackOperation<typename IOp1::Operation::ReadDataType, NullType, BackIOp_,
+                fk::Tuple<typename IOp1::Operation::OutputType, typename IOp2::Operation::OutputType>,
+                DualSourceReadBack<BackIOp_>>;
+            DECLARE_READBACK_PARENT_BASIC
+            FK_HOST_DEVICE_FUSE OutputType exec(const Point thread, const ParamsType&, const BackIOp& backIOp) {
+                return { IOp1::Operation::exec(thread, fk::get<0>(backIOp)),
+                         IOp2::Operation::exec(thread, fk::get<1>(backIOp)) };
+            }
+            FK_HOST_DEVICE_FUSE uint num_elems_x(const Point thread, const OperationDataType& opData) {
+                return IOp1::Operation::num_elems_x(thread, fk::get<0>(opData.backIOp));
+            }
+            FK_HOST_DEVICE_FUSE uint num_elems_y(const Point thread, const OperationDataType& opData) {
+                return IOp1::Operation::num_elems_y(thread, fk::get<0>(opData.backIOp));
+            }
+            FK_HOST_DEVICE_FUSE uint num_elems_z(const Point thread, const OperationDataType& opData) {
+                return IOp1::Operation::num_elems_z(thread, fk::get<0>(opData.backIOp));
+            }
+            FK_HOST_DEVICE_FUSE fk::ActiveThreads getActiveThreads(const OperationDataType& opData) {
+                return { num_elems_x(Point{0,0,0}, opData), num_elems_y(Point{0,0,0}, opData),
+                         num_elems_z(Point{0,0,0}, opData) };
+            }
+            FK_HOST_FUSE InstantiableType build(const IOp1& iop1, const IOp2& iop2) {
+                return { { NullType{}, BackIOp_{ iop1, iop2 } } };
+            }
+        };
+    } // namespace detail
+
     // ===== Two-image bitwise (And/Or/Xor) =====
-#define FASTNPP_DEFINE_TWO_IMAGE_BW(NPPNAME, T, FKLOP)                          \
-    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc1, const fk::Ptr2D<T>& pSrc2) { \
-        return fk::DualSourceRead<fk::ND::_2D, T>::build(pSrc2, pSrc1)           \
-               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());               \
+    // Accepts two caller-supplied Read IOps instead of raw NPP pointers.
+    // detail::DualSourceReadBack reads both sources into an fk::Tuple<T, T>,
+    // consumed directly by the two-input Unary form of the bitwise Operation.
+    // NPP computes dst = pSrc2 OP pSrc1, so src2/src1 are fed in that order to
+    // reproduce NPP's operand order exactly. Returns a composed Read+Unary
+    // IOp; the caller appends a Write IOp to execute it via executeOperations.
+#define FASTNPP_DEFINE_TWO_IMAGE_BW(NPPNAME, T, FKLOP)                                      \
+    template <typename ReadIOp1, typename ReadIOp2>                                          \
+    inline auto NPPNAME(const ReadIOp1& src1, const ReadIOp2& src2) {                       \
+        return detail::DualSourceReadBack<fk::Tuple<ReadIOp2, ReadIOp1>>::build(src2, src1) \
+               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());                            \
     }
     FASTNPP_DEFINE_TWO_IMAGE_BW(And_8u_C1R_Ctx, uchar,  BwAnd)
     FASTNPP_DEFINE_TWO_IMAGE_BW(And_8u_C3R_Ctx, uchar3, BwAnd)
@@ -72,13 +160,12 @@ namespace fastNPP {
     FASTNPP_DEFINE_TWO_IMAGE_BW(Xor_8u_C1R_Ctx, uchar,  BwXor)
     FASTNPP_DEFINE_TWO_IMAGE_BW(Xor_8u_C3R_Ctx, uchar3, BwXor)
     // ===== Two-image element-wise arithmetic (32f) =====
-    // NPP computes dst = pSrc2 OP pSrc1; we feed (src2, src1) into DualSourceRead
-    // so the fused Unary operator reproduces NPP's operand order exactly.
-    // These return a complete read->op chain; the caller appends the write.
-#define FASTNPP_DEFINE_TWO_IMAGE(NPPNAME, T, FKLOP)                              \
-    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc1, const fk::Ptr2D<T>& pSrc2) {  \
-        return fk::DualSourceRead<fk::ND::_2D, T>::build(pSrc2, pSrc1)            \
-               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());                \
+    // Same IOp-based composition as the bitwise two-image ops above.
+#define FASTNPP_DEFINE_TWO_IMAGE(NPPNAME, T, FKLOP)                                          \
+    template <typename ReadIOp1, typename ReadIOp2>                                          \
+    inline auto NPPNAME(const ReadIOp1& src1, const ReadIOp2& src2) {                       \
+        return detail::DualSourceReadBack<fk::Tuple<ReadIOp2, ReadIOp1>>::build(src2, src1) \
+               .then(fk::FKLOP<T, T, T, fk::UnaryType>::build());                            \
     }
 
     FASTNPP_DEFINE_TWO_IMAGE(Add_32f_C1R_Ctx,  float,  Add)

@@ -23,6 +23,8 @@
 #include <fused_kernel/algorithms/image_processing/resize.h>
 #include <fused_kernel/algorithms/basic_ops/vector_ops.h>
 #include <fused_kernel/algorithms/basic_ops/arithmetic.h>
+#include <fused_kernel/algorithms/image_processing/linear_filter.h>
+#include <fused_kernel/algorithms/image_processing/median_filter.h>
 #include <fused_kernel/algorithms/basic_ops/bitwise.h>
 #include <fused_kernel/algorithms/basic_ops/math.h>
 #include <fused_kernel/algorithms/basic_ops/memory_operations.h>
@@ -35,6 +37,45 @@
 
 namespace fastNPP {
 
+    // ===== Linear filters =====
+    // FilterBoxBorder: mean filter over a mask. Matches nppiFilterBoxBorder
+    // (sum-then-divide, truncated) with NPP_BORDER_REPLICATE.
+#define FASTNPP_DEFINE_BOX(NPPNAME, T)                                              \
+    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc, int nMaskWidth, int nMaskHeight,  \
+                        int nAnchorX, int nAnchorY) {                               \
+        return fk::BoxFilter<fk::ND::_2D, T, fk::FilterBorder::REPLICATE>::build(    \
+            pSrc, nMaskWidth, nMaskHeight, nAnchorX, nAnchorY);                     \
+    }
+    FASTNPP_DEFINE_BOX(FilterBoxBorder_8u_C1R_Ctx,  uchar)
+    FASTNPP_DEFINE_BOX(FilterBoxBorder_8u_C3R_Ctx,  uchar3)
+    FASTNPP_DEFINE_BOX(FilterBoxBorder_16u_C1R_Ctx, ushort)
+    FASTNPP_DEFINE_BOX(FilterBoxBorder_32f_C1R_Ctx, float)
+
+    // FilterBorder: general convolution with a float coefficient kernel.
+    // Matches nppiFilterBorder_32f with NPP_BORDER_REPLICATE.
+#define FASTNPP_DEFINE_CONV(NPPNAME, T)                                             \
+    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc, const fk::Ptr2D<float>& pKernel,  \
+                        int nKernelWidth, int nKernelHeight, int nAnchorX, int nAnchorY) { \
+        return fk::LinearFilter<fk::ND::_2D, T, fk::FilterBorder::REPLICATE,         \
+                                fk::FilterRounding::NEAREST>::build(                 \
+            pSrc, pKernel, nKernelWidth, nKernelHeight, nAnchorX, nAnchorY);        \
+    }
+    FASTNPP_DEFINE_CONV(FilterBorder_32f_C1R_Ctx, float)
+    FASTNPP_DEFINE_CONV(FilterBorder_32f_C3R_Ctx, float3)
+
+    // FilterMedianBorder: per-channel window median. Matches nppiFilterMedianBorder
+    // with NPP_BORDER_REPLICATE. (Note: FKL computes the median directly, so the
+    // NPP scratch-buffer argument is not needed.)
+#define FASTNPP_DEFINE_MEDIAN(NPPNAME, T)                                          \
+    inline auto NPPNAME(const fk::Ptr2D<T>& pSrc, int nMaskWidth, int nMaskHeight, \
+                        int nAnchorX, int nAnchorY) {                              \
+        return fk::MedianFilter<fk::ND::_2D, T, 49, fk::FilterBorder::REPLICATE>::build( \
+            pSrc, nMaskWidth, nMaskHeight, nAnchorX, nAnchorY);                    \
+    }
+    FASTNPP_DEFINE_MEDIAN(FilterMedianBorder_8u_C1R_Ctx,  uchar)
+    FASTNPP_DEFINE_MEDIAN(FilterMedianBorder_8u_C3R_Ctx,  uchar3)
+    FASTNPP_DEFINE_MEDIAN(FilterMedianBorder_16u_C1R_Ctx, ushort)
+    FASTNPP_DEFINE_MEDIAN(FilterMedianBorder_32f_C1R_Ctx, float)
     // ===== AbsDiff with constant: |src - C| =====
     constexpr inline auto AbsDiffC_8u_C1R_Ctx(const uchar& nConstant) {
         return fk::AbsDiff<uchar>::build(nConstant);

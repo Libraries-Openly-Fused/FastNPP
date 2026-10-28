@@ -114,7 +114,7 @@ bool test_NPP_cpu_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, 
 
                 hBatchSrcFP32[i].pData = d_cropped_FP32[i].ptr().data;
                 hBatchSrcFP32[i].nStep = d_cropped_FP32[i].dims().pitch;
-                hBatchSrcFP32[i].oSize = up_size;
+                hBatchSrcFP32[i].oSize = crop_size;
 
                 hBatchROI[i].oSrcRectROI = NppiRect{ 0, 0, CROP_W, CROP_H };
                 hBatchROI[i].oDstRectROI = NppiRect{ 0, 0, UP_W, UP_H };

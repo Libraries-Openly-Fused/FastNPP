@@ -295,7 +295,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, fk::
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
               const float *const image = fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point{x, y, b}, h_tensor.ptr());
-              const float pixel = *(image + h_tensor.dims().plane_pitch);
+              const float pixel = *reinterpret_cast<const float*>(reinterpret_cast<const uchar*>(image) + h_tensor.dims().plane_pitch);
               std::cout << " " << pixel;
             }
             std::cout << std::endl;
@@ -304,7 +304,7 @@ bool test_npp_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, fk::
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
               const float *const image = fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point{x, y, b}, h_tensor.ptr());
-              const float pixel = *(image + (h_tensor.dims().plane_pitch * 2));
+              const float pixel = *reinterpret_cast<const float*>(reinterpret_cast<const uchar*>(image) + (h_tensor.dims().plane_pitch * 2));
               std::cout << " " << pixel;
             }
             std::cout << std::endl;
@@ -628,7 +628,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
               const float *const image = fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point{x, y, b}, h_tensor.ptr());
-              const float pixel = *(image + h_tensor.dims().plane_pitch);
+              const float pixel = *reinterpret_cast<const float*>(reinterpret_cast<const uchar*>(image) + h_tensor.dims().plane_pitch);
               std::cout << " " << pixel;
             }
             std::cout << std::endl;
@@ -637,7 +637,7 @@ bool test_npp_batchresize_x_split3D_No_CPU_Overhead(size_t NUM_ELEMS_X, size_t N
           for (int y = 0; y < UP_H; y++) {
             for (int x = 0; x < UP_W; x++) {
               const float *const image = fk::PtrAccessor<fk::ND::_3D>::cr_point(fk::Point{x, y, b}, h_tensor.ptr());
-              const float pixel = *(image + (h_tensor.dims().plane_pitch * 2));
+              const float pixel = *reinterpret_cast<const float*>(reinterpret_cast<const uchar*>(image) + (h_tensor.dims().plane_pitch * 2));
               std::cout << " " << pixel;
             }
             std::cout << std::endl;

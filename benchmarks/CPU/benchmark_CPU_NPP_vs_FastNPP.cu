@@ -77,7 +77,7 @@ bool test_NPP_cpu_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, 
                 for (int batchId = 0; batchId < BATCH; ++batchId) {
                     uint plane_padding = d_tensor.ptr().dims.plane_pitch * planeId;
                     d_dst_output[planeId][batchId] =
-                        reinterpret_cast<Npp32f*>(reinterpret_cast<uchar*>(fk::PtrAccessor<fk::ND::_3D>::point(fk::Point(0,0,batchId), d_tensor.ptr())) + plane_padding);
+                        reinterpret_cast<Npp32f*>(reinterpret_cast<uchar*>(fk::PtrAccessor<fk::ND::_3D>::point(fk::Point{0,0,batchId}, d_tensor.ptr())) + plane_padding);
                 }
             }
 
@@ -107,7 +107,7 @@ bool test_NPP_cpu_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, 
                 hBatchDst[i].nStep = d_resized_npp[i].ptr().dims.pitch;
                 hBatchDst[i].oSize = up_size;
 
-                const fk::Point current_start_coord(i, i);
+                const fk::Point current_start_coord{i, i};
                 hBatchSrc[i].pData = reinterpret_cast<void*>(fk::PtrAccessor<fk::ND::_2D>::point(current_start_coord, d_input.ptr()));
                 hBatchSrc[i].nStep = d_input.dims().pitch;
                 hBatchSrc[i].oSize = crop_size;
@@ -145,7 +145,7 @@ bool test_NPP_cpu_batchresize_x_split3D(size_t NUM_ELEMS_X, size_t NUM_ELEMS_Y, 
 
             std::array<fk::RawPtr<fk::ND::_2D, uchar3>, BATCH> d_crop_fk;
             for (int i = 0; i < BATCH; i++) {
-                d_crop_fk[i] = d_input.crop2D(fk::Point(i, i), fk::PtrDims<fk::ND::_2D>(CROP_W, CROP_H));
+                d_crop_fk[i] = d_input.crop2D(fk::Point{i, i}, fk::PtrDims<fk::ND::_2D>(CROP_W, CROP_H));
             }
 
             auto benchmarkTemp =

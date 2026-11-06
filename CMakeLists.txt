@@ -29,9 +29,3 @@ if (${BUILD_UTEST})
     add_subdirectory(tests)    
 endif()
 
-
-if (${ENABLE_BENCHMARK})
-    include (cmake/discover_tests.cmake)
-    enable_testing()
-    add_subdirectory(benchmarks)
-endif()

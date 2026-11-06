@@ -44,8 +44,10 @@ namespace fastNPP {
                                                                       fk::MemType::Device, currentDevice);
         }
         const fk::Size dstSize(nMaxWidth, nMaxHeight);
+        // NPP samples the source at the pixel centres: src = (x + 0.5) * scale - 0.5, like cv::resize. fk::Resize defaults to
+        // src = x * scale (like cv::cuda::resize), so this wrapper asks for the half pixel sampling to reproduce NPP.
         return fk::PerThreadRead<fk::ND::_2D, uchar3>::build(srcBatch)
-               .then(fk::Resize<fk::InterpolationType::INTER_LINEAR>::build(dstSize));
+               .then(fk::ResizeHalfPixel<fk::InterpolationType::INTER_LINEAR>::build(dstSize));
     }
 
     constexpr inline auto SwapChannels_32f_C3R_Ctx(const int(&dstOrder)[3]) {
